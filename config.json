@@ -1,0 +1,151 @@
+{
+  "version": 2,
+  "listName": "DVB-I Demo Service List",
+  "providerName": "DVB-I Demo",
+  "listLang": "en",
+  "targetCountry": "",
+  "listId": "",
+  "epg": {
+    "id": "dvbi-demo-epg",
+    "providerName": "DVB-I Demo EPG"
+  },
+  "services": [
+    {
+      "id": "tears-of-steel",
+      "uid": "tag:dvbi.example,2024:service:tears-of-steel",
+      "version": 1,
+      "enabled": true,
+      "name": "Tears of Steel",
+      "provider": "Unified Streaming Demo",
+      "lcn": 1,
+      "type": "linear",
+      "genre": "film",
+      "parentalRating": 12,
+      "logoLetters": "TOS",
+      "logoBg": "#c0392b",
+      "logoUrl": "http://localhost:4000/logos/tears-of-steel",
+      "languages": [
+        {
+          "lang": "en",
+          "name": "Tears of Steel"
+        },
+        {
+          "lang": "fr",
+          "name": "Larmes d'Acier"
+        }
+      ],
+      "targetRegion": "",
+      "subscriptionPackage": "",
+      "customEpgUrl": "",
+      "availableFrom": null,
+      "availableTo": null,
+      "linkedApp": null,
+      "instances": [
+        {
+          "id": "inst-ws0iaxc",
+          "label": "Tears of Steel (HLS)",
+          "priority": 1,
+          "hasAudioDescription": false,
+          "hasHardOfHearing": false,
+          "subtitleCarriage": 3,
+          "drmSystems": [],
+          "url": "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8",
+          "type": "hls"
+        },
+        {
+          "id": "inst-lledb62",
+          "label": "Tears of Steel (DASH fallback)",
+          "priority": 2,
+          "hasAudioDescription": false,
+          "hasHardOfHearing": false,
+          "subtitleCarriage": 3,
+          "drmSystems": [],
+          "url": "https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.mpd",
+          "type": "dash"
+        }
+      ],
+      "epgPrograms": []
+    },
+    {
+      "id": "akamai-dash-uhd",
+      "uid": "tag:dvbi.example,2024:service:akamai-dash-uhd",
+      "version": 1,
+      "enabled": true,
+      "name": "Akamai UHD Test",
+      "provider": "Akamai Demo",
+      "lcn": 2,
+      "type": "linear",
+      "genre": "documentary",
+      "parentalRating": null,
+      "logoLetters": "AUT",
+      "logoBg": "#16a085",
+      "logoUrl": "http://localhost:4000/logos/akamai-dash-uhd",
+      "languages": [],
+      "targetRegion": "",
+      "subscriptionPackage": "",
+      "customEpgUrl": "",
+      "availableFrom": null,
+      "availableTo": null,
+      "linkedApp": null,
+      "instances": [
+        {
+          "id": "inst-lwvotil",
+          "label": "Akamai UHD Test (DASH)",
+          "priority": 1,
+          "hasAudioDescription": true,
+          "hasHardOfHearing": true,
+          "subtitleCarriage": 3,
+          "drmSystems": [],
+          "url": "https://dash.akamaized.net/dash264/TestCasesUHD/2b/11/MultiRate.mpd",
+          "type": "dash"
+        }
+      ],
+      "epgPrograms": []
+    },
+    {
+      "id": "akamai-hls-live",
+      "uid": "tag:dvbi.example,2024:service:akamai-hls-live",
+      "version": 1,
+      "enabled": true,
+      "name": "Akamai Live Test",
+      "provider": "Akamai Demo",
+      "lcn": 3,
+      "type": "linear",
+      "genre": "news",
+      "parentalRating": null,
+      "logoLetters": "ALT",
+      "logoBg": "#7f3fbf",
+      "logoUrl": "http://localhost:4000/logos/akamai-hls-live",
+      "languages": [
+        {
+          "lang": "en",
+          "name": "Akamai Live Test"
+        },
+        {
+          "lang": "es",
+          "name": "Akamai Prueba en Vivo"
+        }
+      ],
+      "targetRegion": "",
+      "subscriptionPackage": "",
+      "customEpgUrl": "",
+      "availableFrom": null,
+      "availableTo": null,
+      "linkedApp": null,
+      "instances": [
+        {
+          "id": "inst-k7p9736",
+          "label": "Akamai Live Test (HLS)",
+          "priority": 1,
+          "hasAudioDescription": false,
+          "hasHardOfHearing": true,
+          "subtitleCarriage": 3,
+          "drmSystems": [],
+          "url": "https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8",
+          "type": "hls"
+        }
+      ],
+      "epgPrograms": []
+    }
+  ]
+}

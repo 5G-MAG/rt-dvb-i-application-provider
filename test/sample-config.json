@@ -1,0 +1,67 @@
+{
+  "version": 42,
+  "listName": "Compliance Sample List",
+  "providerName": "Sample Provider",
+  "listLang": "en",
+  "targetCountry": "GBR",
+  "epg": { "id": "sample-epg", "providerName": "Sample EPG" },
+  "services": [
+    {
+      "id": "svc-a", "uid": "tag:sample,2024:service:a", "version": 3,
+      "name": "Alpha One", "provider": "Alpha Media",
+      "languages": [{ "lang": "en", "name": "Alpha One" }, { "lang": "fr", "name": "Alpha Un" }],
+      "lcn": 1, "type": "linear", "genre": "news", "parentalRating": 12,
+      "logoLetters": "A1", "logoBg": "#102030", "logoUrl": "",
+      "targetRegion": "GBR-ENG", "restriction": "subscription",
+      "subscriptionPackage": "Premium", "customEpgUrl": "",
+      "availableFrom": "2026-01-01T00:00:00Z", "availableTo": "2026-12-31T23:59:59Z",
+      "enabled": true,
+      "linkedApp": { "url": "https://app.example.com/alpha", "contentType": "application/vnd.dvb.ait+xml" },
+      "instances": [
+        {
+          "id": "i1", "label": "Alpha DASH multi-DRM", "type": "dash", "priority": 1,
+          "url": "https://cdn.example.com/alpha/manifest.mpd",
+          "hasAudioDescription": true, "hasHardOfHearing": true, "subtitleCarriage": 3,
+          "origSource": "dvb://233a.1004.1044",
+          "drmSystems": [
+            { "system": "widevine", "encryptionScheme": "cenc", "licenseServerUrl": "https://lic.example.com/wv" },
+            { "system": "playready", "encryptionScheme": "cenc", "licenseServerUrl": "https://lic.example.com/pr" }
+          ]
+        },
+        {
+          "id": "i2", "label": "Alpha HLS", "type": "hls", "priority": 2,
+          "url": "https://cdn.example.com/alpha/master.m3u8",
+          "hasAudioDescription": false, "hasHardOfHearing": true, "subtitleCarriage": 1,
+          "drmSystems": [{ "system": "fairplay", "encryptionScheme": "cbcs", "licenseServerUrl": "https://lic.example.com/fp" }]
+        }
+      ],
+      "epgPrograms": [
+        { "title": "Morning News", "dur": 60, "desc": "Headlines and analysis", "genre": "news", "parentalAge": 12,
+          "seriesTitle": "Daily News", "seriesNumber": 3, "episodeNumber": 14,
+          "image": "https://img.example.com/news.jpg", "catchupUrl": "https://vod.example.com/alpha/news1" },
+        { "title": "Weather", "dur": 15, "desc": "Regional forecast", "genre": null, "parentalAge": null,
+          "seriesTitle": null, "seriesNumber": null, "episodeNumber": null, "image": null, "catchupUrl": null }
+      ]
+    },
+    {
+      "id": "svc-b", "uid": "tag:sample,2024:service:b", "version": 1,
+      "name": "Beta Radio", "provider": "Beta Media",
+      "languages": [], "lcn": 2, "type": "radio", "genre": "music", "parentalRating": null,
+      "logoLetters": "B", "logoBg": "#203040", "logoUrl": "",
+      "targetRegion": "", "restriction": "conditionalAccess",
+      "subscriptionPackage": "", "customEpgUrl": "https://epg.example.com/beta",
+      "availableFrom": null, "availableTo": null, "enabled": true,
+      "linkedApp": null,
+      "instances": [
+        { "id": "i3", "label": "Beta multicast", "type": "multicast", "priority": 1, "url": "udp://239.0.0.1:5004",
+          "hasAudioDescription": false, "hasHardOfHearing": false, "subtitleCarriage": 3, "drmSystems": [] },
+        { "id": "i4", "label": "Beta HLS", "type": "hls", "priority": 2, "url": "https://cdn.example.com/beta/master.m3u8",
+          "hasAudioDescription": false, "hasHardOfHearing": false, "subtitleCarriage": 3, "drmSystems": [] }
+      ],
+      "epgPrograms": [
+        { "title": "Jazz Hour", "dur": 60, "desc": "Live jazz", "genre": "music", "parentalAge": null,
+          "seriesTitle": null, "seriesNumber": null, "episodeNumber": null, "image": null, "catchupUrl": null }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,2245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>DVB-I Application Provider and Admin Portal</title>
+  <link rel="stylesheet" href="blue-bar.css"/>
+  <style>
+    :root {
+      --bg:       #0d0d0f;
+      --surface:  #161618;
+      --surface-2:#1e1e23;
+      --surface-3:#26262d;
+      --border:   rgba(255,255,255,0.08);
+      --text:     #e8e8ed;
+      --text-2:   #b0b0bb;
+      --text-3:   #767688;
+      --accent:   #0a84ff;
+      --success:  #30d158;
+      --danger:   #ff453a;
+      --warning:  #ff9f0a;
+      --radius:   8px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    [hidden] { display: none !important; }
+    html, body {
+      height: 100%; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      font-size: 15px; -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    /* ── Header ── */
+    .header {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 0 1.5rem; height: 56px;
+      display: flex; align-items: center; gap: 1rem;
+      position: sticky; top: 0; z-index: 100;
+    }
+    .header-brand { display: flex; align-items: center; gap: 0.6rem; }
+    .dvbi-badge {
+      background: var(--accent); color: #fff; font-size: 0.65rem;
+      font-weight: 800; letter-spacing: 0.1em; padding: 3px 7px; border-radius: 4px;
+    }
+    .header-title { font-size: 0.95rem; font-weight: 700; color: var(--text); }
+    .header-sep { flex: 1; }
+    .btn {
+      border: none; border-radius: var(--radius); cursor: pointer;
+      font-size: 0.84rem; font-weight: 600; padding: 0.4rem 1rem;
+      font-family: inherit; transition: filter 0.15s, background 0.15s;
+      /* line-height:1 + inline-flex keep height uniform across buttons regardless of glyph —
+         some symbol/emoji characters (e.g. the History button's ⏱) have taller font metrics
+         than plain text or other symbols, which otherwise inflates just that button's height. */
+      line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+    }
+    .btn:hover { filter: brightness(1.1); }
+    .btn-primary   { background: var(--accent); color: #fff; }
+    .btn-ghost     { background: rgba(255,255,255,0.07); color: var(--text-2); border: 1px solid var(--border); }
+    .btn-ghost:hover { background: rgba(255,255,255,0.11); color: var(--text); }
+    .btn-danger    { background: rgba(255,69,58,0.15); color: var(--danger); border: 1px solid rgba(255,69,58,0.25); }
+    .btn-danger:hover { background: rgba(255,69,58,0.25); }
+    .btn-sm { font-size: 0.78rem; padding: 0.3rem 0.75rem; }
+    .btn-xs { font-size: 0.72rem; padding: 0.22rem 0.6rem; }
+    .btn-success { background: rgba(48,209,88,0.12); color: var(--success); border: 1px solid rgba(48,209,88,0.25); }
+    .btn-success:hover { background: rgba(48,209,88,0.22); }
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; filter: none; }
+
+    /* ── URL bar ── */
+    .url-bar {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 0 1.5rem; height: 40px;
+      display: flex; align-items: center; gap: 0.75rem;
+      position: sticky; top: 56px; z-index: 99;
+    }
+    .url-bar-label {
+      font-size: 0.7rem; font-weight: 800; text-transform: uppercase;
+      letter-spacing: 0.1em; color: var(--text-3); flex-shrink: 0;
+    }
+    .url-bar-url {
+      flex: 1; font-family: 'SF Mono','Fira Code',monospace;
+      font-size: 0.83rem; color: var(--accent);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .source-bar {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 0 1.5rem; height: 40px;
+      display: flex; align-items: center; gap: 0.75rem;
+      position: sticky; top: 96px; z-index: 98;
+    }
+    .source-bar-path {
+      flex: 1; font-family: 'SF Mono','Fira Code',monospace;
+      font-size: 0.83rem; color: var(--text-2);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .source-bar-note {
+      color: var(--text-3); font-size: 0.78rem; flex-shrink: 0;
+    }
+
+    /* ── Toast ── */
+    #toast {
+      position: fixed; bottom: 1.25rem; right: 1.25rem; z-index: 500;
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 0.6rem 1.1rem;
+      font-size: 0.85rem; color: var(--text-2);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      animation: toast-in 0.2s ease;
+    }
+    #toast.success { border-color: rgba(48,209,88,0.35); color: var(--success); }
+    #toast.error   { border-color: rgba(255,69,58,0.35);  color: var(--danger); }
+    @keyframes toast-in { from { opacity:0; transform: translateY(8px); } }
+
+    /* ── Main layout ── */
+    .main { max-width: 940px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+
+    /* ── Card ── */
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 1.4rem 1.6rem; margin-bottom: 1.5rem;
+    }
+    .card-title {
+      font-size: 0.72rem; font-weight: 800; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--text-3); margin-bottom: 1.1rem;
+    }
+
+    /* ── Form elements ── */
+    .form-row { display: flex; gap: 1rem; margin-bottom: 0.85rem; flex-wrap: wrap; }
+    .field { display: flex; flex-direction: column; gap: 0.3rem; flex: 1; min-width: 160px; }
+    .field label { font-size: 0.75rem; font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.08em; }
+    .field input, .field select, .field textarea {
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 6px; padding: 0.42rem 0.7rem; color: var(--text);
+      font-size: 0.88rem; font-family: inherit; outline: none;
+      transition: border-color 0.15s;
+    }
+    .field input:focus, .field select:focus, .field textarea:focus {
+      border-color: var(--accent);
+    }
+    .field select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23767688'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 0.7rem center; padding-right: 2rem; }
+    .field input[type="color"] { padding: 2px 4px; height: 36px; width: 64px; cursor: pointer; flex: none; }
+    .field-row { display: flex; align-items: flex-end; gap: 0.5rem; }
+
+    /* ── Services list ── */
+    .section-head {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 0.85rem;
+    }
+    .section-head-title {
+      font-size: 0.72rem; font-weight: 800; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--text-3);
+    }
+
+    .svc-list { display: flex; flex-direction: column; gap: 0.6rem; }
+    .svc-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 10px; padding: 1rem 1.2rem;
+      display: flex; align-items: center; gap: 1rem;
+    }
+    .svc-logo {
+      width: 44px; height: 44px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.72rem; font-weight: 800; color: #fff; flex-shrink: 0;
+      letter-spacing: 0.04em;
+    }
+    .svc-info { flex: 1; min-width: 0; }
+    .svc-name { font-size: 0.95rem; font-weight: 700; color: var(--text); margin-bottom: 3px; }
+    .svc-meta { font-size: 0.78rem; color: var(--text-3); display: flex; gap: 0.6rem; flex-wrap: wrap; }
+    .badge {
+      font-size: 0.65rem; font-weight: 700; padding: 2px 7px;
+      border-radius: 4px; letter-spacing: 0.06em;
+    }
+    .badge-lcn  { background: rgba(10,132,255,0.18); color: #5ac8fa; }
+    .badge-type { background: rgba(255,159,10,0.15); color: #ffb340; }
+    .badge-hls  { background: rgba(48,209,88,0.15);  color: #34c759; }
+    .badge-dash { background: rgba(10,132,255,0.15); color: #64d2ff; }
+    .badge-multicast { background: rgba(191,90,242,0.15); color: #da8fff; }
+    .svc-actions { display: flex; gap: 0.4rem; flex-shrink: 0; }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.72);
+      backdrop-filter: blur(4px); z-index: 200;
+      display: flex; align-items: center; justify-content: center; padding: 1rem;
+    }
+    .modal {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 14px; width: 100%; max-width: 640px;
+      max-height: calc(100vh - 2rem); overflow-y: auto;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.7);
+    }
+    .modal-head {
+      padding: 1.2rem 1.5rem 0; display: flex; align-items: center; gap: 0.75rem;
+      position: sticky; top: 0; background: var(--surface); z-index: 1;
+      padding-bottom: 1rem; border-bottom: 1px solid var(--border);
+    }
+    .modal-title { font-size: 1rem; font-weight: 700; flex: 1; }
+    .modal-close {
+      background: none; border: none; color: var(--text-3); cursor: pointer;
+      font-size: 1.1rem; padding: 2px 8px; border-radius: 4px;
+    }
+    .modal-close:hover { color: var(--text); background: var(--surface-2); }
+    .modal-body { padding: 1.3rem 1.5rem; }
+    .modal-section-title {
+      font-size: 0.7rem; font-weight: 800; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--text-3); margin: 1.1rem 0 0.7rem;
+    }
+    .modal-section-title:first-child { margin-top: 0; }
+    .modal-foot {
+      padding: 1rem 1.5rem; border-top: 1px solid var(--border);
+      display: flex; justify-content: flex-end; gap: 0.6rem;
+      position: sticky; bottom: 0; background: var(--surface);
+    }
+
+    /* ── Instances ── */
+    .inst-list { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.7rem; }
+    .inst-item {
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 0.75rem 1rem;
+    }
+    .inst-row { display: flex; gap: 0.6rem; margin-bottom: 0.4rem; align-items: flex-end; }
+    .inst-row:last-child { margin-bottom: 0; }
+    .inst-del {
+      background: none; border: none; color: var(--text-3); cursor: pointer;
+      font-size: 1rem; padding: 0 4px; line-height: 1; border-radius: 4px;
+      align-self: flex-end; padding-bottom: 6px;
+    }
+    .inst-del:hover { color: var(--danger); }
+
+    /* ── XML Preview ── */
+    .xml-wrap {
+      position: relative; margin-top: 0.5rem;
+    }
+    .xml-copy {
+      position: absolute; top: 0.6rem; right: 0.6rem;
+      background: rgba(255,255,255,0.07); border: 1px solid var(--border);
+      color: var(--text-2); font-size: 0.75rem; padding: 3px 10px;
+      border-radius: 5px; cursor: pointer; font-family: inherit;
+    }
+    .xml-copy:hover { background: rgba(255,255,255,0.12); }
+    #xml-output {
+      display: block; width: 100%; max-height: 360px; overflow: auto;
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 8px; padding: 1rem; font-family: 'SF Mono','Fira Code',monospace;
+      font-size: 0.78rem; line-height: 1.55; color: var(--text-2);
+      white-space: pre; tab-size: 2;
+    }
+    .xml-tag   { color: #64d2ff; }
+    .xml-attr  { color: #ffb340; }
+    .xml-val   { color: #a8ff78; }
+    .xml-cmt   { color: var(--text-3); font-style: italic; }
+    .xml-pi    { color: var(--text-3); }
+
+    /* ── EPG Programs ── */
+    .prog-list { display: flex; flex-direction: column; gap: 0.4rem; }
+    .prog-item {
+      display: flex; gap: 0.5rem; align-items: flex-start;
+      background: var(--surface-2); border-radius: 6px; padding: 0.5rem 0.75rem;
+    }
+    .prog-item input { flex: 1; min-width: 0; }
+    .prog-dur { width: 60px; flex-shrink: 0; }
+
+    /* ── Empty state ── */
+    .empty {
+      text-align: center; padding: 2.5rem 1rem; color: var(--text-3);
+      font-size: 0.9rem; border: 1px dashed var(--border);
+      border-radius: 10px;
+    }
+
+    /* ── Import tabs ── */
+    .import-tabs { display: flex; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; width: fit-content; }
+    .import-tab {
+      background: none; border: none; color: var(--text-3); cursor: pointer;
+      font-size: 0.82rem; font-weight: 600; padding: 0.35rem 1rem;
+      font-family: inherit; transition: background 0.15s, color 0.15s;
+    }
+    .import-tab:not(:last-child) { border-right: 1px solid var(--border); }
+    .import-tab:hover { background: var(--surface-2); color: var(--text-2); }
+    .import-tab-active { background: var(--surface-2) !important; color: var(--text) !important; }
+    .radio-label { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; font-size: 0.85rem; color: var(--text-2); }
+    .radio-label input { cursor: pointer; accent-color: var(--accent); }
+
+    /* ── Checkbox row ── */
+    .check-row { display: flex; gap: 1.25rem; flex-wrap: wrap; align-items: center; padding: 0.2rem 0; }
+    .check-label { display: flex; align-items: center; gap: 0.4rem; cursor: pointer; font-size: 0.84rem; color: var(--text-2); }
+    .check-label input[type=checkbox] { cursor: pointer; accent-color: var(--accent); }
+
+    /* ── Lang list ── */
+    .lang-item { display: flex; gap: 0.5rem; align-items: flex-end; margin-bottom: 0.4rem; }
+    .lang-item input { flex: 1; }
+    .lang-code { max-width: 70px; }
+
+    /* ── Logo upload ── */
+    .logo-upload-row { display: flex; gap: 0.5rem; align-items: flex-end; flex-wrap: wrap; margin-top: 0.5rem; }
+    .logo-upload-btn {
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text-2); font-size: 0.82rem;
+      cursor: pointer; padding: 0.42rem 0.85rem; font-family: inherit;
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .logo-upload-btn:hover { border-color: var(--accent); color: var(--text); }
+    #logo-preview-img { width: 52px; height: 52px; border-radius: 9px; object-fit: cover; display: block; }
+
+    /* ── Validation checklist ── */
+    .val-section { margin-bottom: 1rem; }
+    .val-section-title { font-size: 0.7rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-3); margin-bottom: 0.5rem; }
+    .val-item { display: flex; align-items: flex-start; gap: 0.6rem; font-size: 0.85rem; padding: 0.3rem 0; border-bottom: 1px solid var(--border); }
+    .val-item:last-child { border-bottom: none; }
+    .val-icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+    .val-ok   .val-icon { color: var(--success); }
+    .val-warn .val-icon { color: var(--warning); }
+    .val-fail .val-icon { color: var(--danger);  }
+    .val-label { color: var(--text); }
+    .val-detail { font-size: 0.78rem; color: var(--text-3); margin-top: 1px; }
+
+    /* ── History list ── */
+    .hist-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0; border-bottom: 1px solid var(--border); }
+    .hist-item:last-child { border-bottom: none; }
+    .hist-meta { flex: 1; min-width: 0; }
+    .hist-name { font-size: 0.88rem; font-weight: 600; color: var(--text); }
+    .hist-sub  { font-size: 0.75rem; color: var(--text-3); margin-top: 2px; }
+    .hist-empty { text-align: center; padding: 2rem; color: var(--text-3); font-size: 0.88rem; }
+  </style>
+</head>
+<body>
+
+<header class="blue-bar">
+  <div class="blue-bar-logo"><img src="5gmag.png" alt="5G-MAG logo"></div>
+  <div class="blue-bar-title">DVB-I Application Provider and Admin Portal</div>
+  <div class="blue-bar-actions">
+    <a class="blue-bar-link" href="http://localhost:5000" target="_blank" rel="noopener noreferrer">Open Client ↗</a>
+  </div>
+</header>
+
+<header class="header">
+  <div class="header-brand">
+    <span class="dvbi-badge">DVB-I</span>
+    <span class="header-title">Admin Portal</span>
+  </div>
+  <div class="header-sep"></div>
+  <button class="btn btn-ghost btn-sm" onclick="openImport()">↑ Import XML</button>
+  <a class="btn btn-ghost btn-sm" href="/service-list.xml" download="service-list.xml">↓ Download XML</a>
+  <button class="btn btn-ghost btn-sm" onclick="openValidate()">✓ Validate</button>
+  <button class="btn btn-ghost btn-sm" onclick="openCompliance()">⬤ Compliance</button>
+  <button class="btn btn-ghost btn-sm" onclick="openHistory()">⏱ History</button>
+  <button class="btn btn-primary btn-sm" onclick="saveAll()">Save &amp; Publish</button>
+</header>
+
+<div id="toast" hidden></div>
+
+<div class="url-bar">
+  <span class="url-bar-label">Receiver URL</span>
+  <code id="live-url" class="url-bar-url"></code>
+  <button class="btn btn-ghost btn-xs" onclick="copyLiveURL()">Copy</button>
+</div>
+
+<div class="source-bar" title="Everything in this form reads from / writes to that JSON file. It is NOT the DVB-I XML — the compliant &lt;ServiceList&gt; / TV-Anytime XML is generated fresh from this JSON on every request to /service-list.xml, /epg/schedule and /epg/nownext (see buildServiceList() in server.js). Nothing is stored as XML on disk.">
+  <span class="url-bar-label">Data Source</span>
+  <code id="source-path" class="source-bar-path">loading…</code>
+  <span id="source-note" class="source-bar-note"></span>
+</div>
+
+<main class="main">
+
+  <!-- List Settings -->
+  <div class="card">
+    <div class="card-title">Service List Settings</div>
+    <div class="form-row">
+      <div class="field">
+        <label>List Name</label>
+        <input id="cfg-listName" type="text" placeholder="DVB-I Demo Service List"/>
+      </div>
+      <div class="field">
+        <label>Provider Name</label>
+        <input id="cfg-providerName" type="text" placeholder="My Organisation"/>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>EPG Source ID</label>
+        <input id="cfg-epgId" type="text" placeholder="my-epg"/>
+      </div>
+      <div class="field">
+        <label>EPG Provider Name</label>
+        <input id="cfg-epgProvider" type="text" placeholder="My EPG Service"/>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field" style="max-width:120px">
+        <label>List Language <span style="font-weight:400;text-transform:none">(BCP-47)</span></label>
+        <input id="cfg-listLang" type="text" maxlength="8" placeholder="en" value="en"/>
+      </div>
+      <div class="field" style="max-width:170px">
+        <label>Target Country <span style="font-weight:400;text-transform:none">(ISO 3166 alpha-3; also sets Region countryCodes)</span></label>
+        <input id="cfg-targetCountry" type="text" maxlength="3" placeholder="GBR" style="text-transform:uppercase"/>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>Service List ID <span style="font-weight:400;text-transform:none">(tag: URI, mandatory per §5.5.1)</span></label>
+        <input id="cfg-listId" type="text" placeholder="tag:example.com,2024:servicelist:1" style="font-family:monospace;font-size:0.82rem"/>
+      </div>
+    </div>
+  </div>
+
+  <!-- Services -->
+  <div class="section-head">
+    <div class="section-head-title">Services</div>
+    <div style="display:flex;gap:0.4rem">
+      <button class="btn btn-ghost btn-sm" onclick="autoNumberLCN()" title="Assign LCN 1, 2, 3… to services in current display order">Auto LCN</button>
+      <button class="btn btn-ghost btn-sm" onclick="openModal(null)">+ Add Service</button>
+    </div>
+  </div>
+  <div id="svc-list" class="svc-list"></div>
+
+  <!-- XML Preview -->
+  <div class="card" style="margin-top:1.5rem">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem">
+      <div class="card-title" style="margin:0">Generated XML</div>
+      <div style="display:flex;gap:0.5rem">
+        <button class="btn btn-ghost btn-xs" onclick="refreshXML()">↻ Refresh</button>
+      </div>
+    </div>
+    <div class="xml-wrap">
+      <button class="xml-copy" onclick="copyXML()">Copy</button>
+      <code id="xml-output">Loading…</code>
+    </div>
+  </div>
+
+</main>
+
+<!-- Edit Modal -->
+<div id="modal-overlay" class="modal-overlay" hidden onclick="overlayClose(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <span class="modal-title" id="modal-title">Add Service</span>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="modal-section-title">Basic Information</div>
+      <div class="form-row">
+        <div class="field">
+          <label>Service Name *</label>
+          <input id="m-name" type="text" placeholder="My Channel"/>
+        </div>
+        <div class="field">
+          <label>Provider *</label>
+          <input id="m-provider" type="text" placeholder="My Organisation"/>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field" style="max-width:100px">
+          <label>LCN</label>
+          <input id="m-lcn" type="number" min="1" max="9999" placeholder="1"/>
+        </div>
+        <div class="field">
+          <label>Service Type</label>
+          <select id="m-type">
+            <option value="linear">Linear TV</option>
+            <option value="radio">Linear Radio</option>
+            <option value="nonlinear">On Demand</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Unique ID (UID)</label>
+          <input id="m-uid" type="text" placeholder="tag:example.com,2024:service:my-channel" style="font-family:monospace;font-size:0.78rem"/>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label>Genre</label>
+          <select id="m-genre">
+            <option value="">None</option>
+            <option value="news">News</option>
+            <option value="sports">Sports</option>
+            <option value="film">Film</option>
+            <option value="documentary">Documentary</option>
+            <option value="entertainment">Entertainment</option>
+            <option value="drama">Drama</option>
+            <option value="comedy">Comedy</option>
+            <option value="children">Children</option>
+            <option value="music">Music</option>
+            <option value="factual">Factual</option>
+          </select>
+        </div>
+        <div class="field" style="max-width:140px">
+          <label>Parental Rating (min. age)</label>
+          <input id="m-parental" type="number" min="0" max="21" placeholder="e.g. 12"/>
+        </div>
+      </div>
+
+      <div class="modal-section-title">Logo</div>
+      <div class="form-row">
+        <div class="field" style="max-width:120px">
+          <label>Letters (2–3, fallback)</label>
+          <input id="m-logo-letters" type="text" maxlength="3" placeholder="TV"/>
+        </div>
+        <div class="field" style="flex:none">
+          <label>Background</label>
+          <input id="m-logo-bg" type="color" value="#2c3e50"/>
+        </div>
+        <div class="field" style="flex:none;align-self:flex-end">
+          <div id="logo-preview" style="width:52px;height:52px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:1rem;letter-spacing:0.04em;flex-shrink:0;overflow:hidden"></div>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label>Logo Image URL <span style="font-weight:400;text-transform:none;letter-spacing:0">(overrides letters fallback)</span></label>
+          <input id="m-logo-url" type="url" placeholder="https://example.com/logo.png or leave blank"/>
+        </div>
+      </div>
+      <div id="logo-upload-wrap" hidden>
+        <div style="font-size:0.78rem;color:var(--text-3);margin-bottom:0.4rem">Or upload an image file (saved on this server):</div>
+        <div class="logo-upload-row">
+          <input type="file" id="logo-file-input" accept="image/*" style="font-size:0.82rem;color:var(--text-2)"/>
+          <button class="logo-upload-btn" onclick="uploadLogo()">Upload</button>
+          <button class="logo-upload-btn" id="logo-remove-btn" hidden onclick="removeLogo()" style="color:var(--danger)">Remove</button>
+          <span id="logo-upload-status" style="font-size:0.78rem;color:var(--text-3)"></span>
+        </div>
+      </div>
+      <div class="modal-section-title">Multi-language Service Names</div>
+      <div id="lang-list"></div>
+      <button class="btn btn-ghost btn-sm" onclick="addLang()" style="margin-top:0.2rem">+ Add Language</button>
+
+      <div class="modal-section-title">Delivery Instances
+        <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:0.76rem;color:var(--text-3);margin-left:0.5rem">Priority 1 = primary; fallback in order</span>
+      </div>
+      <div id="inst-list" class="inst-list"></div>
+      <button class="btn btn-ghost btn-sm" onclick="addInstance()">+ Add Instance</button>
+
+      <div class="modal-section-title">DVB-I Extended Parameters</div>
+      <div class="form-row">
+        <div class="field">
+          <label>Target Region <span style="font-weight:400">(e.g. EUR, GBR, CHE)</span></label>
+          <input id="m-region" type="text" placeholder="Leave blank for all regions"/>
+        </div>
+        <div class="field">
+          <label>Subscription Package <span style="font-weight:400">(set to gate a service; leave blank if free-to-air)</span></label>
+          <input id="m-subpkg" type="text" placeholder="e.g. Premium, Sports, Basic"/>
+        </div>
+        <div class="field">
+          <label>Custom EPG URL <span style="font-weight:400">(overrides list EPG for this service)</span></label>
+          <input id="m-epg-url" type="url" placeholder="https://example.com/epg/schedule"/>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label>Available From <span style="font-weight:400">(leave blank = always)</span></label>
+          <input id="m-avail-from" type="datetime-local"/>
+        </div>
+        <div class="field">
+          <label>Available Until <span style="font-weight:400">(leave blank = always)</span></label>
+          <input id="m-avail-to" type="datetime-local"/>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="field">
+          <label>Linked Application URL <span style="font-weight:400">(A184r2 §5.1 — optional companion app)</span></label>
+          <input id="m-linked-app-url" type="url" placeholder="https://app.example.com/"/>
+        </div>
+        <div class="field" style="max-width:180px">
+          <label>App Content Type <span style="font-weight:400">(MIME)</span></label>
+          <input id="m-linked-app-ct" type="text" value="text/html" placeholder="text/html"/>
+        </div>
+      </div>
+
+      <div class="modal-section-title">EPG Programmes
+        <span style="font-weight:400;text-transform:none;letter-spacing:0;font-size:0.76rem;color:var(--text-3);margin-left:0.5rem">Looped to fill the schedule</span>
+      </div>
+      <div id="prog-list" class="prog-list"></div>
+      <button class="btn btn-ghost btn-sm" onclick="addProg()" style="margin-top:0.4rem">+ Add Programme</button>
+
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveService()">Save Service</button>
+    </div>
+  </div>
+</div>
+
+<!-- Import Modal -->
+<div id="import-modal" class="modal-overlay" hidden onclick="importOverlayClose(event)">
+  <div class="modal" style="max-width:560px" onclick="event.stopPropagation()">
+    <div class="modal-head">
+      <span class="modal-title">Import DVB-I Service List</span>
+      <button class="modal-close" onclick="closeImport()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="import-tabs">
+        <button id="tab-url"  class="import-tab import-tab-active" onclick="switchImportTab('url')">From URL</button>
+        <button id="tab-file" class="import-tab"                   onclick="switchImportTab('file')">From File</button>
+      </div>
+
+      <div id="import-url-panel">
+        <div class="form-row" style="margin-top:0.85rem;margin-bottom:0.5rem">
+          <div class="field">
+            <label>Service List URL</label>
+            <input id="import-url-input" type="url" placeholder="https://example.com/service-list.xml" style="font-family:monospace;font-size:0.82rem"/>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="fetchImportURL()">Fetch XML</button>
+        <span style="color:var(--text-3);font-size:0.8rem;margin:0 0.4rem">or</span>
+        <button class="btn btn-ghost btn-sm" onclick="loadBundledExample()">Load bundled example</button>
+        <div style="font-size:0.78rem;color:var(--text-3);margin-top:0.5rem">
+          New here? "Load bundled example" loads a sample list (3 services — HLS/DASH, multi-DRM,
+          subtitles, EPG) straight from this app, no external URL needed.
+        </div>
+      </div>
+
+      <div id="import-file-panel" hidden>
+        <div class="form-row" style="margin-top:0.85rem;margin-bottom:0">
+          <div class="field">
+            <label>DVB-I XML File</label>
+            <input id="import-file-input" type="file" accept=".xml,application/xml,text/xml" onchange="readImportFile()"/>
+          </div>
+        </div>
+        <div style="font-size:0.78rem;color:var(--text-3);margin-top:0.4rem">Parsed automatically when you select a file.</div>
+      </div>
+
+      <div id="import-status" style="font-size:0.82rem;margin-top:0.75rem;display:none"></div>
+
+      <div id="import-preview" hidden>
+        <div class="modal-section-title" style="margin-top:1.2rem">Services Found</div>
+        <div id="import-services-list"></div>
+        <div class="modal-section-title">Import Mode</div>
+        <div style="display:flex;gap:1.5rem;margin-bottom:0.5rem">
+          <label class="radio-label"><input type="radio" name="import-mode" value="replace" checked/> Replace all services</label>
+          <label class="radio-label"><input type="radio" name="import-mode" value="merge"/>   Merge (add new, keep existing)</label>
+        </div>
+        <div style="font-size:0.78rem;color:var(--text-3)">Replace also updates list name, provider, and EPG settings.</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeImport()">Cancel</button>
+      <button id="import-confirm-btn" class="btn btn-primary" disabled onclick="confirmImport()">Import</button>
+    </div>
+  </div>
+</div>
+
+<!-- Validation Modal -->
+<div id="validate-modal" class="modal-overlay" hidden onclick="if(event.target.id==='validate-modal')closeValidate()">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:580px">
+    <div class="modal-head">
+      <span class="modal-title">Service List Validation</span>
+      <button class="modal-close" onclick="closeValidate()">✕</button>
+    </div>
+    <div class="modal-body" id="validate-body">
+      <div style="color:var(--text-3);font-size:0.88rem">Running checks…</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeValidate()">Close</button>
+      <button class="btn btn-primary" onclick="saveAll();closeValidate()">Save &amp; Publish</button>
+    </div>
+  </div>
+</div>
+
+<!-- History Modal -->
+<div id="history-modal" class="modal-overlay" hidden onclick="if(event.target.id==='history-modal')closeHistory()">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:560px">
+    <div class="modal-head">
+      <span class="modal-title">Version History</span>
+      <button class="modal-close" onclick="closeHistory()">✕</button>
+    </div>
+    <div class="modal-body" id="history-body">
+      <div class="hist-empty">Loading…</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeHistory()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Compliance Checker Modal -->
+<div id="compliance-modal" class="modal-overlay" hidden onclick="if(event.target.id==='compliance-modal')closeCompliance()">
+  <div class="modal" onclick="event.stopPropagation()" style="max-width:660px">
+    <div class="modal-head">
+      <span class="modal-title">DVB-I Compliance Checker</span>
+      <button class="modal-close" onclick="closeCompliance()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:0.8rem;color:var(--text-3);margin-bottom:0.85rem">
+        Checks structural and metadata compliance against ETSI TS 103 770 and DVB A184r2 guidelines.
+        Accepts any DVB-I namespace version (2019, 2021, 2024).
+      </div>
+      <div class="import-tabs" style="margin-bottom:1rem">
+        <button id="comp-tab-current"  class="import-tab import-tab-active" onclick="switchCompTab('current')">Current List</button>
+        <button id="comp-tab-external" class="import-tab"                   onclick="switchCompTab('external')">External XML</button>
+      </div>
+
+      <div id="comp-ext-panel" hidden>
+        <div class="import-tabs" style="margin-bottom:0.75rem">
+          <button id="comp-sub-url"  class="import-tab import-tab-active" onclick="switchCompExtTab('url')">URL</button>
+          <button id="comp-sub-file" class="import-tab"                   onclick="switchCompExtTab('file')">File</button>
+        </div>
+        <div id="comp-url-panel">
+          <div class="form-row" style="margin-bottom:0.5rem">
+            <div class="field">
+              <label>Service List URL</label>
+              <input id="comp-url-input" type="url" placeholder="https://example.com/service-list.xml" style="font-family:monospace;font-size:0.82rem"/>
+            </div>
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="runComplianceExtURL()">Fetch &amp; Check</button>
+        </div>
+        <div id="comp-file-panel" hidden>
+          <div class="form-row" style="margin-bottom:0">
+            <div class="field">
+              <label>DVB-I XML File</label>
+              <input id="comp-file-input" type="file" accept=".xml,application/xml,text/xml" onchange="runComplianceFile()"/>
+            </div>
+          </div>
+        </div>
+        <div id="comp-ext-status" style="font-size:0.82rem;margin-top:0.5rem;display:none"></div>
+        <hr style="border:none;border-top:1px solid var(--border);margin:1rem 0 0"/>
+      </div>
+
+      <div id="compliance-results">
+        <div style="color:var(--text-3);font-size:0.88rem;text-align:center;padding:2rem">Running checks…</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="closeCompliance()">Close</button>
+      <button id="comp-run-btn" class="btn btn-primary" onclick="runComplianceCurrent()">↻ Re-check</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Admin auth: attach a bearer token (when set) to /api/ calls ────────────────
+// Backward-compatible: when the server has no ADMIN_TOKEN, no token is needed and nothing changes.
+// When the server gates /api/*, the first 401 prompts once for the token and retries.
+let ADMIN_TOKEN = localStorage.getItem('dvbi-admin-token') || '';
+const _origFetch = window.fetch.bind(window);
+window.fetch = async function (input, init = {}) {
+  const url   = typeof input === 'string' ? input : (input && input.url) || '';
+  const isApi = /\/api\//.test(url);
+  const withTok = (opts) => ADMIN_TOKEN
+    ? { ...opts, headers: { ...(opts.headers || {}), Authorization: 'Bearer ' + ADMIN_TOKEN } }
+    : opts;
+  let res = await _origFetch(input, isApi ? withTok(init) : init);
+  if (res.status === 401 && isApi) {
+    const t = (typeof prompt === 'function' ? prompt('Admin token required:') : '') || '';
+    if (t) {
+      ADMIN_TOKEN = t;
+      localStorage.setItem('dvbi-admin-token', t);
+      res = await _origFetch(input, withTok(init));
+    }
+  }
+  return res;
+};
+
+// ── State ─────────────────────────────────────────────────────────────────────
+
+let config   = {};
+let editingId = null;   // null = new service
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+async function init() {
+  config = await fetch('/api/config').then(r => r.json());
+  populateSettings();
+  renderServices();
+  refreshXML();
+  document.getElementById('live-url').textContent = window.location.origin + '/service-list.xml';
+  refreshSourceInfo();
+}
+
+// Shows where the data displayed in this form actually lives on disk (config.json), so it's never
+// a mystery why the same list keeps reappearing on load. Fetched separately from /api/config so this
+// metadata can never accidentally round-trip into a PUT and get persisted into the config itself.
+async function refreshSourceInfo() {
+  try {
+    const meta = await fetch('/api/config/meta').then(r => r.json());
+    if (meta.error) throw new Error(meta.error);
+    document.getElementById('source-path').textContent = meta.path;
+    const when = new Date(meta.lastModified).toLocaleString();
+    document.getElementById('source-note').textContent = `v${meta.version ?? '?'} · saved ${when} · ${meta.sizeBytes.toLocaleString()} bytes`;
+  } catch (e) {
+    document.getElementById('source-path').textContent = '(unavailable)';
+    document.getElementById('source-note').textContent = String(e.message || e);
+  }
+}
+
+// ── Settings form ─────────────────────────────────────────────────────────────
+
+function populateSettings() {
+  document.getElementById('cfg-listName').value    = config.listName      || '';
+  document.getElementById('cfg-providerName').value= config.providerName  || '';
+  document.getElementById('cfg-epgId').value       = config.epg?.id       || '';
+  document.getElementById('cfg-epgProvider').value = config.epg?.providerName || '';
+  document.getElementById('cfg-listLang').value    = config.listLang      || 'en';
+  document.getElementById('cfg-targetCountry').value = config.targetCountry || '';
+  document.getElementById('cfg-listId').value      = config.listId        || '';
+}
+
+function readSettings() {
+  config.listName      = document.getElementById('cfg-listName').value.trim();
+  config.providerName  = document.getElementById('cfg-providerName').value.trim();
+  config.listLang      = document.getElementById('cfg-listLang').value.trim() || 'en';
+  config.targetCountry = document.getElementById('cfg-targetCountry').value.trim().toUpperCase().slice(0, 3);
+  config.listId        = document.getElementById('cfg-listId').value.trim();
+  config.epg = {
+    id:           document.getElementById('cfg-epgId').value.trim(),
+    providerName: document.getElementById('cfg-epgProvider').value.trim(),
+  };
+}
+
+// ── Services list ─────────────────────────────────────────────────────────────
+
+function renderServices() {
+  const el = document.getElementById('svc-list');
+  if (!config.services?.length) {
+    el.innerHTML = '<div class="empty">No services yet. Click "+ Add Service" to get started.</div>';
+    return;
+  }
+  const n = config.services.length;
+  el.innerHTML = config.services.map((s, i) => {
+    const disabled   = s.enabled === false;
+    const instBadges = (s.instances || []).map(inst =>
+      `<span class="badge badge-${esc(inst.type)}">${esc(inst.type.toUpperCase())} ·${esc(String(inst.priority))}</span>`
+    ).join(' ');
+    const logoStyle = `background:${esc(s.logoBg || '#2c3e50')}${disabled ? ';opacity:0.5' : ''}`;
+    const logoContent = s.logoUrl
+      ? `<img src="${esc(s.logoUrl)}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:8px" data-fallback="${esc(s.logoLetters||'TV')}" onerror="this.parentElement.textContent=this.dataset.fallback"/>`
+      : esc(s.logoLetters || 'TV');
+    return `
+    <div class="svc-card" style="${disabled ? 'opacity:0.55' : ''}">
+      <div class="svc-logo" style="${logoStyle}">${logoContent}</div>
+      <div class="svc-info">
+        <div class="svc-name">${esc(s.name)}</div>
+        <div class="svc-meta">
+          ${s.lcn != null ? `<span class="badge badge-lcn">CH ${esc(String(s.lcn))}</span>` : ''}
+          <span class="badge badge-type">${esc(s.type || 'linear')}</span>
+          ${instBadges}
+          <span style="color:var(--text-3)">${esc(s.provider)}</span>
+          ${disabled ? '<span class="badge" style="background:rgba(255,69,58,0.15);color:var(--danger)">DISABLED</span>' : ''}
+        </div>
+      </div>
+      <div class="svc-actions">
+        <button class="btn btn-ghost btn-xs" onclick="moveService(${i},-1)" ${i === 0 ? 'disabled' : ''} title="Move up">↑</button>
+        <button class="btn btn-ghost btn-xs" onclick="moveService(${i}, 1)" ${i === n-1 ? 'disabled' : ''} title="Move down">↓</button>
+        <button class="btn btn-xs ${disabled ? 'btn-ghost' : 'btn-success'}" onclick="toggleService(${i})" title="${disabled ? 'Enable' : 'Disable'}">${disabled ? 'Off' : 'On'}</button>
+        <button class="btn btn-ghost btn-sm" onclick="cloneService(${i})" title="Duplicate this service">Clone</button>
+        <button class="btn btn-ghost btn-sm" onclick="openModal(${i})">Edit</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteService(${i})">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Save all ──────────────────────────────────────────────────────────────────
+
+async function saveAll() {
+  readSettings();
+  try {
+    const res = await fetch('/api/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Unknown error');
+    config.version = data.version;
+    showToast(`Published (v${data.version}) — copy the Receiver URL from the bar above.`, 'success');
+    updateXMLDisplay(data.xml);
+    refreshSourceInfo();
+  } catch (e) { showToast('Save failed: ' + e.message, 'error'); }
+}
+
+// ── Modal open/close ──────────────────────────────────────────────────────────
+
+function openModal(idx) {
+  editingId = idx;
+  const svc = idx !== null ? config.services[idx] : newService();
+  document.getElementById('modal-title').textContent = idx !== null ? `Edit: ${svc.name}` : 'Add Service';
+  document.getElementById('m-name').value        = svc.name        || '';
+  document.getElementById('m-provider').value    = svc.provider    || '';
+  document.getElementById('m-lcn').value         = svc.lcn != null ? svc.lcn : '';
+  document.getElementById('m-type').value        = svc.type        || 'linear';
+  document.getElementById('m-uid').value         = svc.uid         || '';
+  document.getElementById('m-genre').value       = svc.genre       || '';
+  document.getElementById('m-parental').value    = svc.parentalRating != null ? svc.parentalRating : '';
+  document.getElementById('m-logo-letters').value= svc.logoLetters || '';
+  document.getElementById('m-logo-bg').value     = svc.logoBg      || '#2c3e50';
+  document.getElementById('m-logo-url').value    = svc.logoUrl     || '';
+  document.getElementById('m-region').value      = svc.targetRegion|| '';
+  document.getElementById('m-subpkg').value      = svc.subscriptionPackage || '';
+  document.getElementById('m-epg-url').value     = svc.customEpgUrl || '';
+  document.getElementById('m-avail-from').value    = toLocalInput(svc.availableFrom);
+  document.getElementById('m-avail-to').value      = toLocalInput(svc.availableTo);
+  document.getElementById('m-linked-app-url').value = svc.linkedApp?.url  || '';
+  document.getElementById('m-linked-app-ct').value  = svc.linkedApp?.contentType || 'text/html';
+  const uploadWrap = document.getElementById('logo-upload-wrap');
+  uploadWrap.hidden = (idx === null);
+  if (idx !== null) {
+    document.getElementById('logo-remove-btn').hidden = !svc.logoUrl;
+    document.getElementById('logo-upload-status').textContent = svc.logoUrl ? `Current: ${svc.logoUrl}` : '';
+  }
+  renderLangs(svc.languages || []);
+  renderInstances(svc.instances || []);
+  renderProgs(svc.epgPrograms   || []);
+  updateLogoPreview();
+  document.getElementById('modal-overlay').hidden = false;
+  document.getElementById('m-name').focus();
+}
+
+function closeModal() { document.getElementById('modal-overlay').hidden = true; }
+function overlayClose(e) { if (e.target.id === 'modal-overlay') closeModal(); }
+
+function newService() {
+  return {
+    id: 'service-' + Date.now(),
+    uid: 'tag:dvbi.example,' + new Date().getFullYear() + ':service:new-service',
+    name: '', provider: '', lcn: null, type: 'linear',
+    genre: '', parentalRating: null,
+    logoLetters: 'TV', logoBg: '#2c3e50', logoUrl: '',
+    languages: [],
+    targetRegion: '',
+    subscriptionPackage: '', customEpgUrl: '', availableFrom: null, availableTo: null,
+    linkedApp: null,
+    instances: [], epgPrograms: [],
+  };
+}
+
+// ── Logo preview ──────────────────────────────────────────────────────────────
+
+function updateLogoPreview() {
+  const letters = document.getElementById('m-logo-letters').value || 'TV';
+  const bg      = document.getElementById('m-logo-bg').value      || '#2c3e50';
+  const logoUrl = document.getElementById('m-logo-url').value.trim();
+  const el      = document.getElementById('logo-preview');
+  if (logoUrl) {
+    el.innerHTML = `<img id="logo-preview-img" src="${esc(logoUrl)}" alt="" data-fallback="${esc(letters)}" onerror="this.parentElement.textContent=this.dataset.fallback"/>`;
+    el.style.background = bg;
+    el.style.fontSize   = '';
+    el.style.color      = '';
+  } else {
+    el.innerHTML        = letters;
+    el.style.background = bg;
+    el.style.fontSize   = letters.length > 2 ? '0.75rem' : '1rem';
+    el.style.color      = '#fff';
+  }
+}
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('m-logo-letters').addEventListener('input', updateLogoPreview);
+  document.getElementById('m-logo-bg').addEventListener('input',     updateLogoPreview);
+  document.getElementById('m-logo-url').addEventListener('input',    updateLogoPreview);
+});
+
+// ── Logo upload ───────────────────────────────────────────────────────────────
+
+async function uploadLogo() {
+  const file = document.getElementById('logo-file-input').files[0];
+  if (!file) { showToast('Select an image file first.', 'error'); return; }
+  if (editingId === null) { showToast('Save the service first, then upload a logo.', 'error'); return; }
+  const svcId = config.services[editingId].id;
+  const fd = new FormData();
+  fd.append('logo', file);
+  document.getElementById('logo-upload-status').textContent = 'Uploading…';
+  try {
+    const res  = await fetch(`/api/logos/upload/${svcId}`, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Upload failed');
+    config.services[editingId].logoUrl = data.url;
+    document.getElementById('m-logo-url').value = data.url;
+    document.getElementById('logo-upload-status').textContent = `Uploaded: ${data.url}`;
+    document.getElementById('logo-remove-btn').hidden = false;
+    updateLogoPreview();
+    showToast('Logo uploaded. Click Save & Publish.', 'success');
+  } catch (e) {
+    document.getElementById('logo-upload-status').textContent = '';
+    showToast('Upload failed: ' + e.message, 'error');
+  }
+}
+
+async function removeLogo() {
+  if (editingId === null) return;
+  const svcId = config.services[editingId].id;
+  await fetch(`/api/logos/upload/${svcId}`, { method: 'DELETE' });
+  config.services[editingId].logoUrl = '';
+  document.getElementById('m-logo-url').value = '';
+  document.getElementById('logo-upload-status').textContent = '';
+  document.getElementById('logo-remove-btn').hidden = true;
+  updateLogoPreview();
+  showToast('Logo removed. Click Save & Publish.', 'success');
+}
+
+// ── Language list ─────────────────────────────────────────────────────────────
+
+let langs = [];
+
+function renderLangs(list) { langs = JSON.parse(JSON.stringify(list)); redrawLangs(); }
+
+function redrawLangs() {
+  const el = document.getElementById('lang-list');
+  if (!langs.length) { el.innerHTML = '<div style="color:var(--text-3);font-size:0.83rem;padding:0.2rem 0 0.4rem">No extra language names — receiver will use the main Service Name.</div>'; return; }
+  el.innerHTML = langs.map((l, i) => `
+    <div class="lang-item">
+      <div class="field lang-code"><input type="text" value="${esc(l.lang||'')}" maxlength="3" placeholder="en" oninput="langChange(${i},'lang',this.value)" title="BCP-47 / ISO 639 language code"/></div>
+      <div class="field"><input type="text" value="${esc(l.name||'')}" placeholder="Service name in this language" oninput="langChange(${i},'name',this.value)"/></div>
+      <button class="inst-del" onclick="removeLang(${i})" title="Remove">✕</button>
+    </div>`).join('');
+}
+
+function langChange(i, key, val) { langs[i][key] = val; }
+function removeLang(i) { langs.splice(i, 1); redrawLangs(); }
+function addLang() { langs.push({ lang: '', name: '' }); redrawLangs(); }
+
+// ── Instances ─────────────────────────────────────────────────────────────────
+
+let instances = [];
+
+function renderInstances(list) {
+  instances = JSON.parse(JSON.stringify(list));
+  redrawInstances();
+}
+
+function redrawInstances() {
+  const el = document.getElementById('inst-list');
+  if (!instances.length) { el.innerHTML = '<div style="color:var(--text-3);font-size:0.83rem;padding:0.3rem 0">No delivery instances — add at least one.</div>'; return; }
+  el.innerHTML = instances.map((inst, i) => {
+    // Normalise: migrate old single-protection to drmSystems array
+    if (!inst.drmSystems) {
+      inst.drmSystems = (inst.protection && inst.protection !== 'none')
+        ? [{ system: inst.protection, encryptionScheme: inst.encryptionScheme || 'cenc' }] : [];
+    }
+    const hasDRM = inst.drmSystems.length > 0;
+    const drmRows = inst.drmSystems.map((drm, di) => `
+      <div class="inst-row" style="gap:0.5rem;align-items:flex-end;margin-top:0.35rem">
+        <div class="field" style="max-width:150px">
+          <label>DRM System</label>
+          <select onchange="drmChange(${i},${di},'system',this.value)">
+            <option value="widevine"   ${drm.system==='widevine'   ?'selected':''}>Widevine</option>
+            <option value="playready"  ${drm.system==='playready'  ?'selected':''}>PlayReady</option>
+            <option value="fairplay"   ${drm.system==='fairplay'   ?'selected':''}>FairPlay</option>
+            <option value="clearkey"   ${drm.system==='clearkey'   ?'selected':''}>ClearKey</option>
+          </select>
+        </div>
+        <div class="field" style="max-width:120px">
+          <label>Encryption Scheme <span style="font-weight:400;font-size:0.72rem">(§5.5.20)</span></label>
+          <select onchange="drmChange(${i},${di},'encryptionScheme',this.value)">
+            <option value="cenc"    ${!drm.encryptionScheme||drm.encryptionScheme==='cenc'   ?'selected':''}>CENC</option>
+            <option value="cbcs"    ${drm.encryptionScheme==='cbcs'   ?'selected':''}>CBCS</option>
+            <option value="cbcs-10" ${drm.encryptionScheme==='cbcs-10'?'selected':''}>CBCS-10</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>License URL <span style="font-weight:400;font-size:0.72rem">(local only; not in XML per §5.5.20)</span></label>
+          <input type="url" value="${esc(drm.licenseServerUrl||'')}" placeholder="https://license.example.com/…" oninput="drmChange(${i},${di},'licenseServerUrl',this.value)" style="font-family:monospace;font-size:0.78rem"/>
+        </div>
+        <button class="btn btn-ghost btn-xs" style="flex-shrink:0;margin-bottom:1px" onclick="removeDRM(${i},${di})" title="Remove DRM">✕</button>
+      </div>`).join('');
+
+    const hohCarriage = inst.subtitleCarriage || 3;
+    const hohCarriageSelect = inst.hasHardOfHearing ? `
+        <div class="field" style="max-width:200px">
+          <label>Subtitle Carriage <span style="font-weight:400;font-size:0.72rem">(SubtitleCarriageCS:2023)</span></label>
+          <select onchange="instChange(${i},'subtitleCarriage',+this.value)">
+            <option value="1" ${hohCarriage==1?'selected':''}>1 — Application subtitles</option>
+            <option value="2" ${hohCarriage==2?'selected':''}>2 — In MPEG-2 TS</option>
+            <option value="3" ${hohCarriage==3?'selected':''}>3 — In ISOBMFF/DASH</option>
+            <option value="5" ${hohCarriage==5?'selected':''}>5 — Open / in-video</option>
+          </select>
+        </div>` : '';
+
+    return `
+    <div class="inst-item">
+      <div class="inst-row">
+        <div class="field" style="max-width:90px">
+          <label>Type</label>
+          <select onchange="instChange(${i},'type',this.value);redrawInstances()">
+            <option value="hls"       ${inst.type==='hls'       ?'selected':''}>HLS</option>
+            <option value="dash"      ${inst.type==='dash'      ?'selected':''}>DASH</option>
+            <option value="multicast" ${inst.type==='multicast' ?'selected':''}>Multicast</option>
+          </select>
+        </div>
+        <div class="field" style="max-width:70px">
+          <label>Priority</label>
+          <input type="number" min="1" max="99" value="${inst.priority||i+1}" onchange="instChange(${i},'priority',+this.value)"/>
+        </div>
+        <div class="field">
+          <label>Label</label>
+          <input type="text" value="${esc(inst.label||'')}" placeholder="Display name for this instance" oninput="instChange(${i},'label',this.value)"/>
+        </div>
+        <button class="inst-del" onclick="removeInst(${i})" title="Remove instance">✕</button>
+      </div>
+      <div class="inst-row" style="align-items:flex-end">
+        <div class="field">
+          <label>${inst.type==='multicast' ? 'Multicast URL (udp://…)' : 'Stream URL'}</label>
+          <input type="url" value="${esc(inst.url||'')}" placeholder="https://…" oninput="instChange(${i},'url',this.value)" style="font-family:monospace;font-size:0.78rem"/>
+        </div>
+        <button class="btn btn-ghost btn-xs" style="flex-shrink:0;margin-bottom:1px" onclick="testInstURL(${i})">Test</button>
+        <span id="test-${i}" style="font-size:0.73rem;flex-shrink:0;margin-bottom:5px;min-width:3rem"></span>
+      </div>
+      <div class="inst-row" style="flex-wrap:wrap;gap:0.75rem;align-items:center">
+        <div class="check-row" style="flex-shrink:0">
+          <label class="check-label">
+            <input type="checkbox" ${inst.hasAudioDescription?'checked':''} onchange="instChange(${i},'hasAudioDescription',this.checked)"/>
+            Audio Description (AD)
+          </label>
+          <label class="check-label">
+            <input type="checkbox" ${inst.hasHardOfHearing?'checked':''} onchange="instChange(${i},'hasHardOfHearing',this.checked);redrawInstances()"/>
+            Hard of Hearing subtitles (HoH)
+          </label>
+        </div>${hohCarriageSelect}
+        <div style="flex-shrink:0;margin-left:auto">
+          <button class="btn btn-ghost btn-xs" onclick="addDRM(${i})" ${hasDRM?'style="margin-right:0"':''}>+ Add DRM</button>
+        </div>
+      </div>${drmRows}
+    </div>`;
+  }).join('');
+}
+
+function instChange(i, key, val) { instances[i][key] = val; }
+function removeInst(i) { instances.splice(i, 1); redrawInstances(); }
+
+function addDRM(i) {
+  if (!instances[i].drmSystems) instances[i].drmSystems = [];
+  instances[i].drmSystems.push({ system: 'widevine', encryptionScheme: 'cenc', licenseServerUrl: '' });
+  redrawInstances();
+}
+function removeDRM(i, di) { instances[i].drmSystems.splice(di, 1); redrawInstances(); }
+function drmChange(i, di, key, val) { instances[i].drmSystems[di][key] = val; }
+
+function addInstance() {
+  instances.push({ id: 'inst-' + Date.now(), type: 'hls', label: '', url: '', priority: instances.length + 1,
+    hasAudioDescription: false, hasHardOfHearing: false, subtitleCarriage: 3,
+    drmSystems: [] });
+  redrawInstances();
+}
+
+// ── EPG Programmes ────────────────────────────────────────────────────────────
+
+let progs = [];
+
+function renderProgs(list) { progs = JSON.parse(JSON.stringify(list)); redrawProgs(); }
+
+function redrawProgs() {
+  const el = document.getElementById('prog-list');
+  if (!progs.length) { el.innerHTML = '<div style="color:var(--text-3);font-size:0.83rem;padding:0.3rem 0">No programmes — the EPG will be empty.</div>'; return; }
+  el.innerHTML = progs.map((p, i) => `
+    <div class="prog-item" style="flex-direction:column;gap:0.35rem">
+      <div style="display:flex;gap:0.5rem;align-items:flex-end">
+        <div class="field" style="flex:2">
+          <input type="text" value="${esc(p.title||'')}" placeholder="Programme title" oninput="progChange(${i},'title',this.value)"/>
+        </div>
+        <div class="field prog-dur" title="Duration (minutes)">
+          <input type="number" min="1" max="360" value="${p.dur||30}" oninput="progChange(${i},'dur',+this.value)"/>
+        </div>
+        <div class="field" style="flex:3">
+          <input type="text" value="${esc(p.desc||'')}" placeholder="Short synopsis" oninput="progChange(${i},'desc',this.value)"/>
+        </div>
+        <button class="inst-del" onclick="removeProg(${i})" title="Remove">✕</button>
+      </div>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+        <div class="field" style="flex:3;min-width:140px">
+          <input type="url" value="${esc(p.image||'')}" placeholder="Programme image URL (optional)" oninput="progChange(${i},'image',this.value)" style="font-size:0.78rem"/>
+        </div>
+        <div class="field" style="max-width:85px">
+          <input type="text" value="${esc(p.seriesTitle||'')}" placeholder="Series title" oninput="progChange(${i},'seriesTitle',this.value)" style="font-size:0.78rem"/>
+        </div>
+        <div class="field" style="max-width:50px" title="Series number">
+          <input type="number" min="1" value="${p.seriesNumber!=null&&p.seriesNumber!==''?p.seriesNumber:''}" placeholder="S" oninput="progChange(${i},'seriesNumber',this.value||null)"/>
+        </div>
+        <div class="field" style="max-width:50px" title="Episode number">
+          <input type="number" min="1" value="${p.episodeNumber!=null&&p.episodeNumber!==''?p.episodeNumber:''}" placeholder="E" oninput="progChange(${i},'episodeNumber',this.value||null)"/>
+        </div>
+        <div class="field" style="max-width:60px" title="Min. parental age">
+          <input type="number" min="0" max="21" value="${p.parentalAge!=null&&p.parentalAge!==''?p.parentalAge:''}" placeholder="PG" oninput="progChange(${i},'parentalAge',this.value!==''?+this.value:null)"/>
+        </div>
+        <div class="field" style="max-width:110px" title="Programme genre">
+          <select style="font-size:0.78rem" onchange="progChange(${i},'genre',this.value||null)">
+            <option value="" ${!p.genre?'selected':''}>No genre</option>
+            <option value="news"          ${p.genre==='news'         ?'selected':''}>News</option>
+            <option value="sports"        ${p.genre==='sports'       ?'selected':''}>Sports</option>
+            <option value="film"          ${p.genre==='film'         ?'selected':''}>Film</option>
+            <option value="documentary"   ${p.genre==='documentary'  ?'selected':''}>Documentary</option>
+            <option value="entertainment" ${p.genre==='entertainment'?'selected':''}>Entertainment</option>
+            <option value="drama"         ${p.genre==='drama'        ?'selected':''}>Drama</option>
+            <option value="comedy"        ${p.genre==='comedy'       ?'selected':''}>Comedy</option>
+            <option value="children"      ${p.genre==='children'     ?'selected':''}>Children</option>
+            <option value="music"         ${p.genre==='music'        ?'selected':''}>Music</option>
+            <option value="factual"       ${p.genre==='factual'      ?'selected':''}>Factual</option>
+          </select>
+        </div>
+        <div class="field" style="flex:3;min-width:130px" title="Catch-up / VOD URL for this programme">
+          <input type="url" value="${esc(p.catchupUrl||'')}" placeholder="Catch-up URL (optional)" oninput="progChange(${i},'catchupUrl',this.value||null)" style="font-size:0.78rem"/>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+function progChange(i, key, val) { progs[i][key] = val; }
+function removeProg(i) { progs.splice(i, 1); redrawProgs(); }
+function addProg() {
+  progs.push({ title: '', dur: 30, desc: '', image: null, parentalAge: null, seriesTitle: null, seriesNumber: null, episodeNumber: null, genre: null, catchupUrl: null });
+  redrawProgs();
+}
+
+// ── Save service ──────────────────────────────────────────────────────────────
+
+function saveService() {
+  const name = document.getElementById('m-name').value.trim();
+  if (!name) { showToast('Service name is required.', 'error'); return; }
+  if (!instances.length) { showToast('Add at least one delivery instance.', 'error'); return; }
+
+  const lcnRaw  = document.getElementById('m-lcn').value;
+  const pgRaw   = document.getElementById('m-parental').value;
+  const uidVal  = document.getElementById('m-uid').value.trim() || `tag:dvbi.example,${new Date().getFullYear()}:service:${name.toLowerCase().replace(/\s+/g,'-')}`;
+  const existing = editingId !== null ? config.services[editingId] : null;
+
+  // Duplicate UID check
+  const dupIdx = config.services.findIndex((s, i) => s.uid === uidVal && i !== editingId);
+  if (dupIdx >= 0) {
+    showToast(`UID already used by "${config.services[dupIdx].name}" — choose a unique identifier.`, 'error');
+    return;
+  }
+
+  // LCN conflict check
+  const lcnNum = lcnRaw !== '' ? parseInt(lcnRaw, 10) : null;
+  if (lcnNum !== null) {
+    const lcnDupIdx = config.services.findIndex((s, i) => s.lcn === lcnNum && i !== editingId);
+    if (lcnDupIdx >= 0) {
+      showToast(`Channel number ${lcnNum} already used by "${config.services[lcnDupIdx].name}".`, 'error');
+      return;
+    }
+  }
+
+  const availFromRaw = document.getElementById('m-avail-from').value;
+  const availToRaw   = document.getElementById('m-avail-to').value;
+
+  // Linked application (A184r2 §5.1)
+  const linkedAppUrl = document.getElementById('m-linked-app-url').value.trim();
+  const linkedApp    = linkedAppUrl ? {
+    url:         linkedAppUrl,
+    contentType: document.getElementById('m-linked-app-ct').value.trim() || 'text/html',
+  } : null;
+
+  const svc = {
+    id:            uidVal.split(':').pop().replace(/[^a-z0-9-]/gi, '-').toLowerCase() || ('svc-' + Date.now()),
+    uid:           uidVal,
+    enabled:       existing ? existing.enabled !== false : true,
+    version:       existing ? (existing.version || 1) + 1 : 1,
+    name,
+    provider:      document.getElementById('m-provider').value.trim(),
+    lcn:           lcnRaw !== '' ? parseInt(lcnRaw, 10) : null,
+    type:          document.getElementById('m-type').value,
+    genre:         document.getElementById('m-genre').value || null,
+    parentalRating: pgRaw !== '' ? parseInt(pgRaw, 10) : null,
+    logoLetters:   document.getElementById('m-logo-letters').value.trim().toUpperCase() || 'TV',
+    logoBg:        document.getElementById('m-logo-bg').value,
+    logoUrl:       document.getElementById('m-logo-url').value.trim() || (existing?.logoUrl || ''),
+    languages:     langs,
+    targetRegion:  document.getElementById('m-region').value.trim(),
+    subscriptionPackage: document.getElementById('m-subpkg').value.trim(),
+    customEpgUrl:  document.getElementById('m-epg-url').value.trim(),
+    availableFrom: availFromRaw ? new Date(availFromRaw).toISOString() : null,
+    availableTo:   availToRaw   ? new Date(availToRaw).toISOString()   : null,
+    linkedApp,
+    instances:     instances,
+    epgPrograms:   progs,
+  };
+
+  if (editingId !== null) config.services[editingId] = svc;
+  else config.services.push(svc);
+
+  closeModal();
+  renderServices();
+  refreshXML();
+  showToast(editingId !== null ? 'Service updated. Click Save & Publish.' : 'Service added. Click Save & Publish.', 'success');
+}
+
+// ── Delete service ────────────────────────────────────────────────────────────
+
+function deleteService(i) {
+  if (!confirm(`Delete "${config.services[i].name}"?`)) return;
+  config.services.splice(i, 1);
+  renderServices();
+  refreshXML();
+  showToast('Service removed. Click Save & Publish.', 'success');
+}
+
+// ── XML preview ───────────────────────────────────────────────────────────────
+
+async function refreshXML() {
+  const el = document.getElementById('xml-output');
+  try {
+    const xml = await fetch('/api/xml').then(r => r.text());
+    updateXMLDisplay(xml);
+  } catch (e) { el.textContent = 'Failed to load XML: ' + e.message; }
+}
+
+function updateXMLDisplay(xml) {
+  document.getElementById('xml-output').innerHTML = highlightXML(xml);
+}
+
+function highlightXML(xml) {
+  return xml
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/&lt;!--.*?--&gt;/gs, m => `<span class="xml-cmt">${m}</span>`)
+    .replace(/&lt;\?.*?\?&gt;/g, m => `<span class="xml-pi">${m}</span>`)
+    .replace(/&lt;([/!]?[\w:-]+)/g, (_, tag) => `&lt;<span class="xml-tag">${tag}</span>`)
+    .replace(/([\w:-]+)=(&quot;)(.*?)(&quot;)/g, (_, attr, q1, val, q2) =>
+      `<span class="xml-attr">${attr}</span>=${q1}<span class="xml-val">${val}</span>${q2}`);
+}
+
+async function copyXML() {
+  const text = await fetch('/api/xml').then(r => r.text());
+  await navigator.clipboard.writeText(text);
+  showToast('XML copied to clipboard.', 'success');
+}
+
+function copyLiveURL() {
+  const url = window.location.origin + '/service-list.xml';
+  navigator.clipboard.writeText(url);
+  showToast('URL copied to clipboard.', 'success');
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+
+let toastTimer;
+function showToast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = type;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, 4000);
+}
+
+// ── Utils ─────────────────────────────────────────────────────────────────────
+
+function toLocalInput(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// ── Clone / auto LCN ─────────────────────────────────────────────────────────
+
+function cloneService(i) {
+  const src   = config.services[i];
+  const clone = JSON.parse(JSON.stringify(src));
+  clone.id    = 'svc-' + Date.now();
+  clone.name  = src.name + ' (Copy)';
+  clone.lcn   = null;
+  clone.instances = clone.instances.map(inst => ({ ...inst, id: 'inst-' + Math.random().toString(36).slice(2, 9) }));
+  config.services.splice(i + 1, 0, clone);
+  renderServices();
+  refreshXML();
+  showToast(`Cloned "${src.name}". Edit the copy, then Save & Publish.`);
+}
+
+function autoNumberLCN() {
+  config.services.forEach((s, i) => { s.lcn = i + 1; });
+  renderServices();
+  refreshXML();
+  showToast(`LCN assigned 1–${config.services.length}. Click Save & Publish.`, 'success');
+}
+
+// ── Toggle / reorder / test ───────────────────────────────────────────────────
+
+function toggleService(i) {
+  config.services[i].enabled = config.services[i].enabled === false;
+  renderServices();
+  refreshXML();
+  showToast(`Service ${config.services[i].enabled === false ? 'disabled' : 'enabled'}. Click Save & Publish.`);
+}
+
+function moveService(i, dir) {
+  const j = i + dir;
+  if (j < 0 || j >= config.services.length) return;
+  [config.services[i], config.services[j]] = [config.services[j], config.services[i]];
+  renderServices();
+  refreshXML();
+}
+
+async function testInstURL(i) {
+  const url  = instances[i]?.url;
+  const span = document.getElementById(`test-${i}`);
+  if (!span) return;
+  if (!url) { span.style.color = 'var(--text-3)'; span.textContent = 'No URL'; return; }
+  span.style.color = 'var(--text-3)'; span.textContent = 'Testing…';
+  try {
+    const res  = await fetch('/api/test-url?url=' + encodeURIComponent(url));
+    const data = await res.json();
+    span.style.color   = data.ok ? 'var(--success)' : 'var(--danger)';
+    span.textContent   = data.ok ? `✓ ${data.status}` : `✗ ${data.status || 'Error'}`;
+  } catch {
+    span.style.color = 'var(--danger)'; span.textContent = '✗ Failed';
+  }
+}
+
+// ── Import XML ────────────────────────────────────────────────────────────────
+
+let importedData = null;
+
+function openImport() {
+  importedData = null;
+  document.getElementById('import-preview').hidden          = true;
+  document.getElementById('import-confirm-btn').disabled    = true;
+  document.getElementById('import-url-input').value         = '';
+  document.getElementById('import-file-input').value        = '';
+  setImportStatus('');
+  switchImportTab('url');
+  document.getElementById('import-modal').hidden            = false;
+}
+
+function closeImport() { document.getElementById('import-modal').hidden = true; }
+function importOverlayClose(e) { if (e.target.id === 'import-modal') closeImport(); }
+
+function switchImportTab(tab) {
+  document.getElementById('import-url-panel').hidden  = (tab !== 'url');
+  document.getElementById('import-file-panel').hidden = (tab !== 'file');
+  document.getElementById('tab-url').classList.toggle('import-tab-active',  tab === 'url');
+  document.getElementById('tab-file').classList.toggle('import-tab-active', tab === 'file');
+}
+
+async function fetchImportURL() {
+  const url = document.getElementById('import-url-input').value.trim();
+  if (!url) { showToast('Enter a URL first.', 'error'); return; }
+  showToast('Fetching…');
+  try {
+    const res = await fetch('/api/fetch-xml?url=' + encodeURIComponent(url));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    processImportXML(await res.text());
+  } catch (e) { showToast('Fetch failed: ' + e.message, 'error'); }
+}
+
+// Loads the bundled example straight from this app's own static files — a plain same-origin
+// fetch, deliberately NOT routed through /api/fetch-xml (that endpoint is for arbitrary external
+// URLs and is SSRF-guarded against loopback addresses, which would reject a URL pointing back at
+// this very server anyway). No external network access needed.
+async function loadBundledExample() {
+  showToast('Loading example…');
+  try {
+    const res = await fetch('/examples/sample-service-list.xml');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    processImportXML(await res.text());
+  } catch (e) { showToast('Could not load example: ' + e.message, 'error'); }
+}
+
+function readImportFile() {
+  const file = document.getElementById('import-file-input').files[0];
+  if (!file) { showToast('Select a file first.', 'error'); return; }
+  const reader = new FileReader();
+  reader.onload = e => processImportXML(e.target.result);
+  reader.readAsText(file, 'utf-8');
+}
+
+function setImportStatus(msg, isError) {
+  const el = document.getElementById('import-status');
+  el.textContent = msg;
+  el.style.display = msg ? '' : 'none';
+  el.style.color = isError ? 'var(--danger)' : 'var(--text-3)';
+}
+
+function processImportXML(xmlText) {
+  setImportStatus('Parsing…');
+  try {
+    importedData = parseDVBIXML(xmlText);
+    if (!importedData.services.length) {
+      setImportStatus('No services found in this XML. Check it is a valid DVB-I service list.', true);
+      return;
+    }
+    setImportStatus('');
+    showImportPreview(importedData);
+  } catch (e) {
+    setImportStatus('Parse error: ' + e.message, true);
+  }
+}
+
+function showImportPreview(data) {
+  document.getElementById('import-preview').hidden        = false;
+  document.getElementById('import-confirm-btn').disabled  = false;
+  document.getElementById('import-services-list').innerHTML =
+    `<div style="font-size:0.82rem;color:var(--text-2);margin-bottom:0.75rem">
+       List: <strong>${esc(data.listName)}</strong> — <strong>${data.services.length}</strong> service(s)
+     </div>` +
+    data.services.map(s => `
+      <div class="svc-card" style="padding:0.65rem 0.9rem;margin-bottom:0.3rem">
+        <div class="svc-logo" style="background:${esc(s.logoBg)};width:36px;height:36px;font-size:${s.logoLetters.length > 2 ? '0.6rem' : '0.75rem'}">${esc(s.logoLetters)}</div>
+        <div class="svc-info">
+          <div class="svc-name" style="font-size:0.88rem">${esc(s.name)}</div>
+          <div class="svc-meta">
+            ${s.lcn != null ? `<span class="badge badge-lcn">CH ${esc(String(s.lcn))}</span>` : ''}
+            <span class="badge badge-type">${esc(s.type)}</span>
+            ${(s.instances||[]).map(i => `<span class="badge badge-${esc(i.type)}">${esc(String(i.type).toUpperCase())}</span>`).join('')}
+            ${s.provider ? `<span style="color:var(--text-3)">${esc(s.provider)}</span>` : ''}
+          </div>
+        </div>
+      </div>`).join('');
+}
+
+function confirmImport() {
+  if (!importedData) return;
+  const mode = document.querySelector('input[name="import-mode"]:checked').value;
+  if (mode === 'replace' && config.services.length > 0) {
+    const n = config.services.length;
+    if (!confirm(`Replace all ${n} existing service${n > 1 ? 's' : ''}? This cannot be undone.`)) return;
+  }
+  const added = [];
+  if (mode === 'replace') {
+    config.listName     = importedData.listName     || config.listName;
+    config.providerName = importedData.providerName || config.providerName;
+    if (importedData.epgId)           config.epg.id           = importedData.epgId;
+    if (importedData.epgProviderName) config.epg.providerName = importedData.epgProviderName;
+    config.services = importedData.services;
+    added.push(...importedData.services);
+  } else {
+    const existingUids = new Set((config.services||[]).map(s => s.uid));
+    const existingLcns = new Set((config.services||[]).filter(s => s.lcn != null).map(s => s.lcn));
+    const fresh = importedData.services.filter(s => {
+      if (existingUids.has(s.uid)) return false;
+      if (s.lcn != null && existingLcns.has(s.lcn)) {
+        showToast(`Skipped "${s.name}": LCN ${s.lcn} already in use.`, 'error');
+        return false;
+      }
+      return true;
+    });
+    config.services = [...(config.services||[]), ...fresh];
+    added.push(...fresh);
+  }
+  closeImport();
+  populateSettings();
+  renderServices();
+  refreshXML();
+  showToast(`Imported ${added.length} service(s). Click Save & Publish to apply.`, 'success');
+}
+
+// ── DVB-I XML parser ──────────────────────────────────────────────────────────
+
+function parseDVBIXML(xmlText) {
+  const doc    = new DOMParser().parseFromString(xmlText, 'application/xml');
+  const parseErr = doc.querySelector('parsererror');
+  if (parseErr) throw new Error('Invalid XML: ' + parseErr.textContent.slice(0, 80));
+  const _rootNs = doc.documentElement?.namespaceURI || '';
+  const NS      = _rootNs.startsWith('urn:dvb:metadata:servicediscovery:') ? _rootNs : 'urn:dvb:metadata:servicediscovery:2024';
+  const _tvaCandidates = ['urn:tva:metadata:2024', 'urn:tva:metadata:2019', 'urn:tva:metadata:2010'];
+  const NS_TVA  = _tvaCandidates.find(v =>
+    doc.getElementsByTagNameNS(v, 'HowRelated').length > 0 ||
+    doc.getElementsByTagNameNS(v, 'Name').length > 0
+  ) || 'urn:tva:metadata:2024';
+
+  function first(node, localName, ns) { return node.getElementsByTagNameNS(ns, localName)[0]; }
+  function text(node, localName, ns)  { const el = first(node, localName, ns); return el ? el.textContent.trim() : ''; }
+
+  const listName     = text(doc, 'Name', NS)        || 'Imported Service List';
+  const providerName = text(doc, 'ProviderName', NS) || '';
+
+  // LCN import. The internal model holds one channel number per service, so when a
+  // service appears in several <LCNTable>s we resolve deterministically: a global table
+  // (no TargetRegion) always wins; otherwise the first regional table in document order.
+  // (Per-region channel numbers can't be fully represented; see README/known-limitations.)
+  const lcnMap = {};
+  const lcnTables = doc.getElementsByTagNameNS(NS, 'LCNTable');
+  if (lcnTables.length) {
+    const fromGlobal = {};
+    for (const table of lcnTables) {
+      // TargetRegion is a child element (RegionIdRefType); tolerate the legacy attribute form
+      const trChild = table.getElementsByTagNameNS('*', 'TargetRegion')[0];
+      const isGlobal = !(trChild && trChild.textContent.trim()) && !table.getAttribute('TargetRegion');
+      for (const lcn of table.getElementsByTagNameNS(NS, 'LCN')) {
+        const ref = lcn.getAttribute('serviceRef');
+        const ch  = parseInt(lcn.getAttribute('channelNumber'), 10);
+        if (!ref || isNaN(ch)) continue;
+        if (isGlobal) { lcnMap[ref] = ch; fromGlobal[ref] = true; }
+        else if (!fromGlobal[ref] && !(ref in lcnMap)) lcnMap[ref] = ch;
+      }
+    }
+  } else {
+    // Older/loose format: <LCN> not wrapped in <LCNTable>
+    for (const lcn of doc.getElementsByTagNameNS(NS, 'LCN')) {
+      const ref = lcn.getAttribute('serviceRef');
+      const ch  = parseInt(lcn.getAttribute('channelNumber'), 10);
+      if (ref && !isNaN(ch)) lcnMap[ref] = ch;
+    }
+  }
+
+  let epgId = '', epgProviderName = '';
+  const cgs = first(doc, 'ContentGuideSource', NS);
+  if (cgs) { epgId = cgs.getAttribute('CGSID') || ''; epgProviderName = text(cgs, 'ProviderName', NS); }
+
+  const COLORS = ['#c0392b','#16a085','#7f3fbf','#1a6b9e','#e67e22','#27ae60','#8e44ad','#d35400'];
+  let ci = 0;
+
+  const services = [];
+  for (const svc of doc.getElementsByTagNameNS(NS, 'Service')) {
+    const uid      = text(svc, 'UniqueIdentifier', NS);
+    const name     = text(svc, 'ServiceName', NS);
+    const provider = text(svc, 'ProviderName', NS);
+    const typeEl   = first(svc, 'ServiceType', NS);
+    const type     = (typeEl?.getAttribute('href') || '').split(':').pop() || 'linear';
+    // TargetRegion: attribute is lowercase regionID per TS 103 770 §5.5.2 (what we emit);
+    // tolerate legacy capitalised RegionID and a plain text node as fallbacks.
+    const regionEl = first(svc, 'TargetRegion', NS);
+    const region   = regionEl?.getAttribute('regionID') || regionEl?.getAttribute('RegionID') || regionEl?.textContent?.trim() || '';
+
+    // (ServiceRestriction is not a DVB-I element and is no longer imported/emitted; subscription
+    //  gating is expressed via SubscriptionPackage.)
+
+    // Subscription package
+    const subPkg = text(svc, 'SubscriptionPackage', NS);
+
+    // Genre — ServiceGenre (§5.5.2); fall back to Genre for backward compat
+    const genreEl2 = first(svc, 'ServiceGenre', NS) || first(svc, 'Genre', NS);
+    let genre = null;
+    if (genreEl2) {
+      const gn = genreEl2.getElementsByTagNameNS(NS_TVA, 'Name')[0];
+      if (gn) genre = gn.textContent.trim().toLowerCase();
+      else { const seg = (genreEl2.getAttribute('href') || '').split(':').pop(); if (seg) genre = seg.toLowerCase(); }
+    }
+
+    // Parental rating — ParentalRating/MinimumAge (§5.5.28); fall back to ParentalGuidance
+    const pgEl2 = first(svc, 'ParentalRating', NS) || first(svc, 'ParentalGuidance', NS);
+    let parentalRating = null;
+    if (pgEl2) {
+      const ageEl = pgEl2.getElementsByTagNameNS(NS, 'MinimumAge')[0]
+        || pgEl2.getElementsByTagNameNS(NS_TVA, 'MinimumAge')[0]
+        || pgEl2.getElementsByTagName('MinimumAge')[0];
+      if (ageEl) parentalRating = parseInt(ageEl.textContent.trim(), 10) || null;
+    }
+
+    // Multi-language service names (use all ServiceName elements with xml:lang)
+    const nameEls2 = svc.getElementsByTagNameNS(NS, 'ServiceName');
+    const languages = nameEls2.length > 1
+      ? Array.from(nameEls2).map(el => ({ lang: el.getAttribute('xml:lang') || 'en', name: el.textContent.trim() })).filter(l => l.name)
+      : [];
+
+    // RelatedMaterial: logo (HowRelated :1001.2) and linked app (HowRelated LinkedApplicationCS)
+    let logoUrl = '';
+    let linkedApp = null;
+    for (const rm of svc.getElementsByTagNameNS(NS, 'RelatedMaterial')) {
+      const hr   = first(rm, 'HowRelated', NS_TVA) || first(rm, 'HowRelated', NS);
+      const href = hr?.getAttribute('href') || '';
+      const mu   = rm.getElementsByTagNameNS(NS_TVA, 'MediaUri')[0] || rm.getElementsByTagNameNS(NS, 'MediaUri')[0];
+      if (href.includes('1001.2') && mu && !logoUrl) {
+        logoUrl = mu.textContent.trim();
+      } else if (href.includes('LinkedApplicationCS') && mu) {
+        // Match the scheme name only; a bare ':2019:' is too loose (many TVA terms share that year)
+        linkedApp = { url: mu.textContent.trim(), contentType: mu.getAttribute('contentType') || 'text/html' };
+      }
+    }
+
+    // Availability — validFrom/validTo (§5.5.15); fall back to start/end for backward compat
+    let availableFrom = null, availableTo = null;
+    const availEl2 = first(svc, 'Availability', NS);
+    if (availEl2) {
+      const period = availEl2.getElementsByTagNameNS(NS, 'Period')[0];
+      if (period) {
+        availableFrom = period.getAttribute('validFrom') || period.getAttribute('start') || null;
+        availableTo   = period.getAttribute('validTo')   || period.getAttribute('end')   || null;
+      }
+    }
+
+    const instances = [];
+    for (const inst of svc.getElementsByTagNameNS(NS, 'ServiceInstance')) {
+      const priority = parseInt(inst.getAttribute('priority') || '99', 10);
+      const label    = text(inst, 'DisplayName', NS) || name;
+      // Accessibility — ContentAttributes/AccessibilityAttributes (§4.5.4.1); backward compat with old elements
+      const caEl2 = first(inst, 'ContentAttributes', NS);
+      // AccessibilityAttributes wrapper is a DVB-I element (tva children); match by localName in any ns
+      const aaEl2 = caEl2?.getElementsByTagNameNS('*', 'AccessibilityAttributes')[0];
+      const hasAD  = !!(aaEl2?.getElementsByTagNameNS(NS_TVA, 'AudioDescriptionAttributes')[0])
+        || first(inst, 'AudioAttributes', NS)?.getElementsByTagNameNS(NS, 'HasAudioDescription')[0]?.textContent?.trim() === 'true';
+      // SubtitleCarriage type from tva:Carriage/@href last segment (A184r2 §4.9)
+      const saEl   = aaEl2?.getElementsByTagNameNS(NS_TVA, 'SubtitleAttributes')[0];
+      const hasHoH = !!saEl
+        || first(inst, 'SubtitleAttributes', NS)?.getElementsByTagNameNS(NS, 'HasHardOfHearing')[0]?.textContent?.trim() === 'true';
+      const carriageEl = saEl?.getElementsByTagNameNS(NS_TVA, 'Carriage')[0];
+      const carriageHref = carriageEl?.getAttribute('href') || '';
+      const carriageMatch = carriageHref.match(/:(\d+)$/);
+      const subtitleCarriage = carriageMatch ? parseInt(carriageMatch[1], 10) : 3;
+
+      const dash  = first(inst, 'DASHDeliveryParameters', NS);
+      const other = first(inst, 'OtherDeliveryParameters', NS);
+      // MulticastTSDeliveryParameters (§5.5.13); fall back to old name
+      const multi = first(inst, 'MulticastTSDeliveryParameters', NS) || first(inst, 'MulticastDeliveryParameters', NS);
+
+      // Parse all ContentProtection blocks — multi-DRM (§5.5.20)
+      const UUID_DRM = {
+        'urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed': 'widevine',
+        'urn:uuid:9a04f079-9840-4286-ab92-e65be0885f95': 'playready',
+        'urn:uuid:94ce86fb-07ff-4f43-adb8-93d2fa968ca2': 'fairplay',
+        'urn:uuid:e2719d58-a985-b3c9-781a-b030af78d30e': 'clearkey',
+      };
+      const drmSystems = Array.from(inst.getElementsByTagNameNS(NS, 'ContentProtection')).map(cp => {
+        const drmEl2 = cp.getElementsByTagNameNS(NS, 'DRMSystemId')[0];
+        const uuid   = drmEl2?.textContent.trim().toLowerCase() || '';
+        const lic    = cp.getElementsByTagNameNS(NS, 'LicenseServerURL')[0]?.textContent.trim() || '';
+        return { system: UUID_DRM[uuid] || uuid || 'widevine', encryptionScheme: drmEl2?.getAttribute('encryptionScheme') || 'cenc', licenseServerUrl: lic };
+      });
+      // OriginalDeliverySource (A184r2 §4.6.6)
+      // URI may be emitted as dvbisd-t:URI (servicediscovery-types ns) — match by localName in any ns
+      const uriIn = (node) => node && node.getElementsByTagNameNS('*', 'URI')[0];
+
+      const baseInst = { id: instId(), label, priority, hasAudioDescription: hasAD, hasHardOfHearing: hasHoH, subtitleCarriage, drmSystems };
+      if (dash) { const u = uriIn(dash); if (u) instances.push({ ...baseInst, url: u.textContent.trim(), type: 'dash' }); }
+      if (other && ((other.getAttribute('extensionName')||'').includes('mpegurl') || (other.getAttribute('xsi:type')||'').includes('m3u8'))) {
+        const u = uriIn(other); if (u) instances.push({ ...baseInst, url: u.textContent.trim(), type: 'hls' }); }
+      if (multi) {
+        // IPMulticastAddress: attributes are Address/Port (capital); tolerate legacy lowercase + URI form
+        const ipa = multi.getElementsByTagNameNS(NS, 'IPMulticastAddress')[0];
+        let mcUrl = '';
+        if (ipa) {
+          const addr = ipa.getAttribute('Address') || ipa.getAttribute('address') || '';
+          const port = ipa.getAttribute('Port')    || ipa.getAttribute('port')    || '5004';
+          mcUrl = `udp://${addr}:${port}`;
+        } else { const u = uriIn(multi); if (u) mcUrl = u.textContent.trim(); }
+        // Keep parsed drmSystems (baseInst) — the generator can emit ContentProtection for any
+        // instance type, so import must preserve it rather than discard multicast DRM.
+        if (mcUrl) instances.push({ ...baseInst, url: mcUrl, type: 'multicast' });
+      }
+    }
+    instances.sort((a, b) => a.priority - b.priority);
+
+    const letters = (name||'').split(/\s+/).map(w => w[0]).join('').slice(0, 3).toUpperCase() || 'TV';
+    const id      = uid.split(':').pop().replace(/[^a-z0-9-]/gi, '-').toLowerCase() || ('svc-' + Date.now());
+    if (name && instances.length) {
+      services.push({ id, uid, version: parseInt(svc.getAttribute('version')||'1',10)||1, enabled: true,
+        name, provider, lcn: lcnMap[uid]??null, type, genre, parentalRating,
+        logoLetters: letters, logoBg: COLORS[ci++ % COLORS.length], logoUrl,
+        languages, targetRegion: region,
+        subscriptionPackage: subPkg, customEpgUrl: '', availableFrom, availableTo,
+        linkedApp,
+        instances, epgPrograms: [] });
+    }
+  }
+  return { listName, providerName, epgId, epgProviderName, services };
+}
+
+function instId() { return 'inst-' + Math.random().toString(36).slice(2, 9); }
+
+// ── XML Validation ────────────────────────────────────────────────────────────
+
+function openValidate() {
+  document.getElementById('validate-modal').hidden = false;
+  runValidation();
+}
+
+function closeValidate() {
+  document.getElementById('validate-modal').hidden = true;
+}
+
+function runValidation() {
+  readSettings();
+  const svcs    = config.services || [];
+  const enabled = svcs.filter(s => s.enabled !== false);
+  const checks  = [];
+
+  function chk(ok, warn, label, detail) {
+    checks.push({ ok: ok === true, warn: warn === true, label, detail: detail || '' });
+  }
+
+  // List-level
+  chk(!!config.listName, false, 'List name is set', config.listName ? `"${config.listName}"` : 'Required field is empty');
+  chk(!!config.providerName, false, 'Provider name is set', config.providerName ? `"${config.providerName}"` : 'Required field is empty');
+  chk(!!config.listId, false, 'Service List ID is set (§5.5.1 mandatory)', config.listId ? `"${config.listId}"` : 'Required — use a tag: URI, e.g. tag:example.com,2024:servicelist:1');
+  chk(!!config.epg?.id, false, 'EPG source ID is set', config.epg?.id ? `"${config.epg.id}"` : 'Required for ContentGuideSource');
+  chk(enabled.length > 0, false, 'At least one enabled service', `${enabled.length} enabled, ${svcs.length - enabled.length} disabled`);
+
+  // LCN uniqueness
+  const lcnNums = enabled.filter(s => s.lcn != null).map(s => s.lcn);
+  const lcnDups = lcnNums.filter((v, i) => lcnNums.indexOf(v) !== i);
+  chk(lcnDups.length === 0, false, 'LCN values are unique', lcnDups.length ? `Duplicate LCNs: ${[...new Set(lcnDups)].join(', ')}` : `${lcnNums.length} channel numbers assigned`);
+
+  // UID uniqueness
+  const uids    = enabled.map(s => s.uid).filter(Boolean);
+  const uidDups = uids.filter((v, i) => uids.indexOf(v) !== i);
+  chk(uidDups.length === 0, false, 'Unique identifiers (UIDs) are unique', uidDups.length ? `Duplicate UIDs: ${[...new Set(uidDups)].join(', ')}` : 'All UIDs unique');
+
+  // Per-service checks
+  let noNameCount = 0, noInstanceCount = 0, badUrlCount = 0, drmNoSchemeCount = 0;
+  for (const s of enabled) {
+    if (!s.name) noNameCount++;
+    if (!s.instances?.length) noInstanceCount++;
+    for (const inst of (s.instances || [])) {
+      if (inst.type !== 'multicast' && inst.url && !/^https?:\/\//i.test(inst.url)) badUrlCount++;
+      // Multi-DRM model: each entry in drmSystems must carry an encryptionScheme (§5.5.20).
+      // Tolerate legacy single-protection data that predates the drmSystems array.
+      const drms = inst.drmSystems?.length ? inst.drmSystems
+        : (inst.protection && inst.protection !== 'none' ? [{ encryptionScheme: inst.encryptionScheme }] : []);
+      if (drms.some(d => !d.encryptionScheme)) drmNoSchemeCount++;
+    }
+  }
+  chk(noNameCount === 0, false, 'All services have a name', noNameCount ? `${noNameCount} service(s) missing a name` : 'All services named');
+  chk(noInstanceCount === 0, false, 'All services have at least one stream', noInstanceCount ? `${noInstanceCount} service(s) have no delivery instances` : 'All services have streams');
+  chk(badUrlCount === 0, false, 'All stream URLs use http(s)', badUrlCount ? `${badUrlCount} URL(s) are not http/https` : 'All URLs valid scheme');
+  chk(drmNoSchemeCount === 0, true, 'DRM instances have an encryption scheme (§5.5.20 mandatory)', drmNoSchemeCount ? `${drmNoSchemeCount} instance(s) missing encryptionScheme — defaults to cenc` : 'All DRM instances have encryptionScheme');
+
+  const passed = checks.filter(c => c.ok).length;
+  const body   = document.getElementById('validate-body');
+  const summary = `<div style="font-size:0.85rem;margin-bottom:1rem;color:var(--text-2)">
+    ${passed} / ${checks.length} checks passed
+    ${passed === checks.length ? '<span style="color:var(--success);margin-left:0.5rem">&#10003; Ready to publish</span>' : '<span style="color:var(--warning);margin-left:0.5rem">&#9888; Review issues below</span>'}
+  </div>`;
+
+  const items = checks.map(c => {
+    const cls  = c.ok ? 'val-ok' : (c.warn ? 'val-warn' : 'val-fail');
+    const icon = c.ok ? '✓' : (c.warn ? '⚠' : '✗');
+    return `<div class="val-item ${cls}">
+      <span class="val-icon">${icon}</span>
+      <div><div class="val-label">${esc(c.label)}</div>${c.detail ? `<div class="val-detail">${esc(c.detail)}</div>` : ''}</div>
+    </div>`;
+  }).join('');
+
+  body.innerHTML = summary + `<div class="val-section">${items}</div>`;
+}
+
+// ── Version History ───────────────────────────────────────────────────────────
+
+function openHistory() {
+  document.getElementById('history-modal').hidden = false;
+  loadHistory();
+}
+
+function closeHistory() {
+  document.getElementById('history-modal').hidden = true;
+}
+
+async function loadHistory() {
+  const body = document.getElementById('history-body');
+  body.innerHTML = '<div class="hist-empty">Loading…</div>';
+  try {
+    const entries = await fetch('/api/history').then(r => r.json());
+    if (!entries.length) { body.innerHTML = '<div class="hist-empty">No history yet. Snapshots are created on each Save &amp; Publish.</div>'; return; }
+    body.innerHTML = entries.map((e, i) => {
+      const dateStr = e.filename.replace('config-', '').replace('.json', '')
+        .replace(/T(\d{2})-(\d{2})-(\d{2})-\d+Z$/, ' $1:$2:$3 UTC').replace('T', ' ').replace(/-/g, '/').replace(/ (\d{2})\/(\d{2})\/(\d{2})/, ' $1:$2:$3');
+      return `<div class="hist-item">
+        <div class="hist-meta">
+          <div class="hist-name">${e.listName ? esc(e.listName) : '(unnamed list)'} ${e.version ? `<span style="color:var(--text-3);font-weight:400">v${e.version}</span>` : ''}</div>
+          <div class="hist-sub">${e.services} service(s) &nbsp;·&nbsp; ${esc(e.filename)}</div>
+        </div>
+        <button class="btn btn-ghost btn-xs" onclick="restoreHistory('${esc(e.filename)}')">Restore</button>
+      </div>`;
+    }).join('');
+  } catch (err) { body.innerHTML = `<div class="hist-empty" style="color:var(--danger)">Failed to load history: ${esc(String(err))}</div>`; }
+}
+
+async function restoreHistory(filename) {
+  if (!confirm(`Restore "${filename}"? Current state will be saved to history first.`)) return;
+  try {
+    const res  = await fetch('/api/history/restore/' + encodeURIComponent(filename), { method: 'POST' });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Restore failed');
+    config = await fetch('/api/config').then(r => r.json());
+    populateSettings();
+    renderServices();
+    refreshXML();
+    refreshSourceInfo();
+    closeHistory();
+    showToast(`Restored to v${data.version}. Review and Save &amp; Publish.`, 'success');
+  } catch (e) { showToast('Restore failed: ' + e.message, 'error'); }
+}
+
+// ── Compliance Checker ────────────────────────────────────────────────────────
+
+function openCompliance() {
+  document.getElementById('compliance-modal').hidden = false;
+  switchCompTab('current');
+}
+
+function closeCompliance() { document.getElementById('compliance-modal').hidden = true; }
+
+function switchCompTab(tab) {
+  document.getElementById('comp-ext-panel').hidden = (tab !== 'external');
+  document.getElementById('comp-run-btn').hidden   = (tab !== 'current');
+  document.getElementById('comp-tab-current').classList.toggle('import-tab-active',  tab === 'current');
+  document.getElementById('comp-tab-external').classList.toggle('import-tab-active', tab === 'external');
+  if (tab === 'current') {
+    runComplianceCurrent();
+  } else {
+    document.getElementById('compliance-results').innerHTML =
+      '<div style="color:var(--text-3);font-size:0.88rem;text-align:center;padding:2rem">Provide a URL or select a file above to start.</div>';
+  }
+}
+
+function switchCompExtTab(tab) {
+  document.getElementById('comp-url-panel').hidden  = (tab !== 'url');
+  document.getElementById('comp-file-panel').hidden = (tab !== 'file');
+  document.getElementById('comp-sub-url').classList.toggle('import-tab-active',  tab === 'url');
+  document.getElementById('comp-sub-file').classList.toggle('import-tab-active', tab === 'file');
+}
+
+async function runComplianceCurrent() {
+  document.getElementById('compliance-results').innerHTML =
+    '<div style="color:var(--text-3);font-size:0.88rem;text-align:center;padding:1.5rem">Fetching current XML…</div>';
+  try {
+    const xml = await fetch('/api/xml').then(r => r.text());
+    showComplianceResults(checkCompliance(xml));
+  } catch (e) {
+    document.getElementById('compliance-results').innerHTML =
+      `<div style="color:var(--danger);font-size:0.85rem;padding:1rem">Failed to load XML: ${esc(String(e))}</div>`;
+  }
+}
+
+async function runComplianceExtURL() {
+  const url = document.getElementById('comp-url-input').value.trim();
+  if (!url) { showToast('Enter a URL first.', 'error'); return; }
+  setCompExtStatus('Fetching…');
+  document.getElementById('compliance-results').innerHTML =
+    '<div style="color:var(--text-3);font-size:0.88rem;text-align:center;padding:1.5rem">Fetching XML…</div>';
+  try {
+    const res = await fetch('/api/fetch-xml?url=' + encodeURIComponent(url));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    setCompExtStatus('');
+    showComplianceResults(checkCompliance(await res.text()));
+  } catch (e) { setCompExtStatus('Fetch failed: ' + e.message, true); }
+}
+
+function runComplianceFile() {
+  const file = document.getElementById('comp-file-input').files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => showComplianceResults(checkCompliance(e.target.result));
+  reader.readAsText(file, 'utf-8');
+}
+
+function setCompExtStatus(msg, isError) {
+  const el = document.getElementById('comp-ext-status');
+  el.textContent = msg;
+  el.style.display = msg ? '' : 'none';
+  el.style.color = isError ? 'var(--danger)' : 'var(--text-3)';
+}
+
+// Core DVB-I compliance checker — accepts raw XML, returns grouped result sections
+function checkCompliance(xmlText) {
+  const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+  const parseErr = doc.querySelector('parsererror');
+  if (parseErr) {
+    return [{ title: 'XML Parse Error', checks: [{ status: 'fail', label: 'Valid XML document', detail: parseErr.textContent.slice(0, 120) }] }];
+  }
+
+  // Detect namespace from root element — version-agnostic
+  const _rootNs = doc.documentElement?.namespaceURI || '';
+  const ns = _rootNs.startsWith('urn:dvb:metadata:servicediscovery:') ? _rootNs : 'urn:dvb:metadata:servicediscovery:2024';
+  const _tvaV = ['urn:tva:metadata:2024', 'urn:tva:metadata:2019', 'urn:tva:metadata:2010'];
+  const tva = _tvaV.find(v => doc.getElementsByTagNameNS(v, 'HowRelated').length > 0 ||
+    doc.getElementsByTagNameNS(v, 'Name').length > 0) || 'urn:tva:metadata:2024';
+
+  const root   = doc.documentElement;
+  const all    = (node, name, n = ns) => Array.from(node.getElementsByTagNameNS(n, name));
+  const first  = (node, name, n = ns) => node.getElementsByTagNameNS(n, name)[0];
+  const text   = (node, name, n = ns) => first(node, name, n)?.textContent.trim() || '';
+  const attr   = (node, name) => (node && node.getAttribute(name)) || '';
+
+  const results = [];
+
+  function section(title, fn) {
+    const checks = [];
+    const chk = (status, label, detail = '') => checks.push({ status, label, detail });
+    fn(chk);
+    results.push({ title, checks });
+  }
+
+  // 1. XML / Service List root
+  section('Service List Structure (§5.5.1)', chk => {
+    const isRoot = root.localName === 'ServiceList';
+    chk(isRoot ? 'ok' : 'fail', 'Root element is <ServiceList>',
+      !isRoot ? `Found <${root.localName}>` : '');
+    const nsYear = ns.match(/:(\d{4})$/)?.[1] || '?';
+    chk(ns.startsWith('urn:dvb:metadata:servicediscovery:') ? 'ok' : 'fail',
+      `DVB-I namespace detected (${nsYear})`, ns);
+    chk(attr(root, 'id') ? 'ok' : 'fail', 'id attribute (Service List ID) present',
+      attr(root, 'id') ? attr(root, 'id').slice(0, 70) : 'Missing — use a tag: URI per §5.5.1');
+    const id = attr(root, 'id');
+    if (id) chk(/^(tag:|urn:|https?:\/\/)/.test(id) ? 'ok' : 'warn',
+      'List ID uses URI scheme (tag: recommended)', /^(tag:|urn:)/.test(id) ? '' : `Got: ${id.slice(0,50)}`);
+    chk(attr(root, 'version') ? 'ok' : 'warn', 'version attribute present', attr(root, 'version') || 'Recommended');
+    chk(attr(root, 'xml:lang') || root.getAttribute('lang') ? 'ok' : 'warn',
+      'xml:lang declared on root', '');
+    chk(text(doc, 'Name') ? 'ok' : 'fail', '<Name> present', text(doc, 'Name') ? `"${text(doc,'Name')}"` : 'Required');
+    chk(text(doc, 'ProviderName') ? 'ok' : 'fail', '<ProviderName> present', text(doc, 'ProviderName') || 'Required');
+    const langs = all(doc, 'Language');
+    chk(langs.length > 0 ? 'ok' : 'warn', '<LanguageList> with at least one language',
+      langs.length ? langs.map(l => l.textContent.trim()).join(', ') : 'Recommended per §5.5.1');
+  });
+
+  // 2. LCN / Channel Numbering
+  section('LCN / Channel Numbering (§4.8 / §5.5.8)', chk => {
+    const tables = all(doc, 'LCNTable');
+    chk(tables.length > 0 ? 'ok' : 'warn', '<LCNTableList> with <LCNTable> present',
+      tables.length ? `${tables.length} table(s)` : 'Recommended for channel navigation');
+    if (tables.length) {
+      const totalLCNs = all(doc, 'LCN').length;
+      chk(totalLCNs > 0 ? 'ok' : 'warn', 'LCN entries assigned', `${totalLCNs} entry/entries`);
+      let dupCount = 0;
+      for (const tbl of tables) {
+        const nums = all(tbl, 'LCN').map(l => parseInt(attr(l, 'channelNumber'), 10)).filter(n => !isNaN(n));
+        dupCount += nums.filter((v, i) => nums.indexOf(v) !== i).length;
+      }
+      chk(dupCount === 0 ? 'ok' : 'fail', 'No duplicate channel numbers per table',
+        dupCount ? `${dupCount} duplicate(s) found` : '');
+      const regionTables = tables.filter(t => first(t, 'TargetRegion') || attr(t, 'TargetRegion'));
+      const regionedSvcs = all(doc, 'Service').filter(s => first(s, 'TargetRegion'));
+      if (regionedSvcs.length && !regionTables.length) {
+        chk('warn', 'Region-targeted <LCNTable TargetRegion="…"> (§4.8)',
+          `${regionedSvcs.length} services use TargetRegion but no LCNTable has TargetRegion`);
+      } else if (regionTables.length) {
+        chk('ok', 'Per-region LCNTables present (§4.8)', `${regionTables.length} regional table(s)`);
+      }
+    }
+  });
+
+  // 3. Services
+  section('Services (§5.5.2)', chk => {
+    const svcs = all(doc, 'Service');
+    chk(svcs.length > 0 ? 'ok' : 'fail', 'At least one <Service>', `${svcs.length} service(s)`);
+    let noUID = 0, badUID = 0, noName = 0, noInst = 0, noType = 0;
+    const uids = [];
+    for (const s of svcs) {
+      const uid = text(s, 'UniqueIdentifier');
+      if (!uid) noUID++;
+      else { if (!/^(tag:|urn:|https?:\/\/)/.test(uid)) badUID++; uids.push(uid); }
+      if (!text(s, 'ServiceName')) noName++;
+      if (!all(s, 'ServiceInstance').length) noInst++;
+      if (!first(s, 'ServiceType')) noType++;
+    }
+    const dupU = uids.filter((v, i) => uids.indexOf(v) !== i);
+    chk(noUID === 0 ? 'ok' : 'fail', 'All services have <UniqueIdentifier>',
+      noUID ? `${noUID} missing` : '');
+    chk(badUID === 0 ? 'ok' : 'warn', 'UniqueIdentifiers use URI scheme',
+      badUID ? `${badUID} non-URI identifier(s)` : '');
+    chk(dupU.length === 0 ? 'ok' : 'fail', 'UniqueIdentifiers are distinct',
+      dupU.length ? `Duplicates: ${[...new Set(dupU)].slice(0,3).join(', ')}` : '');
+    chk(noName === 0 ? 'ok' : 'fail', 'All services have <ServiceName>',
+      noName ? `${noName} missing` : '');
+    chk(noInst === 0 ? 'ok' : 'fail', 'All services have at least one <ServiceInstance>',
+      noInst ? `${noInst} without delivery` : '');
+    chk(noType === 0 ? 'ok' : 'warn', 'All services have <ServiceType>',
+      noType ? `${noType} missing` : '');
+  });
+
+  // 4. Delivery
+  section('Delivery Instances (§4.6)', chk => {
+    const insts = all(doc, 'ServiceInstance');
+    if (!insts.length) { chk('fail', 'ServiceInstances present', 'None found'); return; }
+    let noDisp = 0, noPriority = 0, badUrl = 0;
+    for (const inst of insts) {
+      if (!text(inst, 'DisplayName')) noDisp++;
+      if (!attr(inst, 'priority')) noPriority++;
+      const dash = first(inst, 'DASHDeliveryParameters');
+      if (dash) { const u = dash.getElementsByTagNameNS('*', 'URI')[0]?.textContent.trim(); if (u && !/^https?:\/\//i.test(u)) badUrl++; }
+      const other = first(inst, 'OtherDeliveryParameters');
+      if (other) { const u = other.getElementsByTagNameNS('*', 'URI')[0]?.textContent.trim(); if (u && !/^https?:\/\//i.test(u)) badUrl++; }
+    }
+    chk(noDisp === 0 ? 'ok' : 'warn', 'All ServiceInstances have <DisplayName>',
+      noDisp ? `${noDisp} missing` : '');
+    chk(noPriority === 0 ? 'ok' : 'warn', 'priority attribute on ServiceInstances',
+      noPriority ? `${noPriority} missing` : '');
+    chk(badUrl === 0 ? 'ok' : 'warn', 'Stream URIs use https:// (recommended)',
+      badUrl ? `${badUrl} URI(s) not https://` : '');
+    // HLS in OtherDeliveryParameters
+    const hlsInsts = insts.filter(i => {
+      const other = first(i, 'OtherDeliveryParameters');
+      if (!other) return false;
+      const ext = (attr(other,'extensionName')||attr(other,'xsi:type')||'').toLowerCase();
+      return ext.includes('mpegurl') || ext.includes('m3u8');
+    });
+    const dashInsts = all(doc, 'DASHDeliveryParameters');
+    chk('ok', `Delivery types found`,
+      [dashInsts.length ? `${dashInsts.length} DASH` : '', hlsInsts.length ? `${hlsInsts.length} HLS` : '',
+       all(doc, 'MulticastTSDeliveryParameters').length ? `${all(doc,'MulticastTSDeliveryParameters').length} Multicast` : ''].filter(Boolean).join(', ') || 'None detected');
+  });
+
+  // 5. Content Guide / EPG
+  section('Content Guide / EPG (§4.5 / §6)', chk => {
+    const cgsl = first(doc, 'ContentGuideSourceList');
+    chk(cgsl ? 'ok' : 'warn', '<ContentGuideSourceList> present',
+      !cgsl ? 'Receivers will have no EPG' : '');
+    if (cgsl) {
+      const cgss = all(cgsl, 'ContentGuideSource');
+      chk(cgss.length > 0 ? 'ok' : 'fail', 'At least one <ContentGuideSource>', `${cgss.length}`);
+      const noId = cgss.filter(c => !attr(c, 'CGSID')).length;
+      chk(noId === 0 ? 'ok' : 'fail', 'CGSID attribute on ContentGuideSource(s)', noId ? `${noId} missing` : '');
+      const noSched = cgss.filter(c => !first(c, 'ScheduleInfoEndpoint')).length;
+      chk(noSched === 0 ? 'ok' : 'warn', '<ScheduleInfoEndpoint> present', noSched ? `${noSched} missing` : '');
+      const noNN = cgss.filter(c => !first(c, 'ProgramInfoEndpoint') && !first(c, 'NowNextInfoEndpoint')).length;
+      chk(noNN === 0 ? 'ok' : 'warn', '<ProgramInfoEndpoint> present (now/next, §6)', noNN ? `${noNN} missing` : '');
+    }
+  });
+
+  // 6. Region Targeting
+  section('Region Targeting (§4.7 / §4.8)', chk => {
+    const svcs2 = all(doc, 'Service');
+    const regSvcs = svcs2.filter(s => first(s, 'TargetRegion'));
+    if (!regSvcs.length) { chk('ok', 'No region targeting — global service list', 'All services appear on all receivers'); return; }
+    chk('ok', `${regSvcs.length}/${svcs2.length} services use <TargetRegion>`, '');
+    const rl = first(doc, 'RegionList');
+    chk(rl ? 'ok' : 'warn', '<RegionList> defines regions', !rl ? 'Required when using TargetRegion' : '');
+    if (rl) {
+      const defined = new Set(all(rl, 'Region').map(r => attr(r,'regionID') || attr(r,'RegionID') || r.textContent.trim()));
+      const used    = new Set(regSvcs.map(s => { const tr = first(s,'TargetRegion'); return tr ? (attr(tr,'regionID')||attr(tr,'RegionID')||tr.textContent.trim()) : ''; }));
+      const undecl  = [...used].filter(r => r && !defined.has(r));
+      chk(undecl.length === 0 ? 'ok' : 'warn', 'All TargetRegion values declared in RegionList',
+        undecl.length ? `Undeclared: ${undecl.join(', ')}` : '');
+    }
+  });
+
+  // 7. Accessibility
+  section('Accessibility (A184r2 §4.9)', chk => {
+    const insts2 = all(doc, 'ServiceInstance');
+    const adEls  = all(doc, 'AudioDescriptionAttributes', tva);
+    const hohEls = all(doc, 'SubtitleAttributes', tva).filter(el => {
+      const p = el.getElementsByTagNameNS(tva, 'Purpose')[0];
+      return p && (p.getAttribute('href') || '').includes('HardOfHearing');
+    });
+    if (!adEls.length && !hohEls.length) {
+      chk('warn', 'No accessibility attributes declared',
+        'Consider AudioDescriptionAttributes / HardOfHearing SubtitleAttributes (optional but recommended)');
+      return;
+    }
+    chk(adEls.length > 0 ? 'ok' : 'ok', 'Audio Description (AD) declared',
+      adEls.length ? `${adEls.length} instance(s)` : 'Not set');
+    chk(hohEls.length > 0 ? 'ok' : 'ok', 'Hard of Hearing (HoH) subtitles declared',
+      hohEls.length ? `${hohEls.length} instance(s)` : 'Not set');
+    // Check for correct container structure. AccessibilityAttributes wrapper is a DVB-I element
+    // (children are tva:), so count it namespace-agnostically by localName.
+    const correctAA = doc.getElementsByTagNameNS('*', 'AccessibilityAttributes').length;
+    chk(correctAA > 0 ? 'ok' : 'warn', 'Accessibility uses ContentAttributes/AccessibilityAttributes (§4.9)',
+      correctAA ? `${correctAA} correct block(s)` : 'Deprecated element structure may be in use');
+  });
+
+  // 8. Content Protection / DRM
+  section('Content Protection (§4.10 / §5.5.20)', chk => {
+    const cps = all(doc, 'ContentProtection');
+    if (!cps.length) { chk('ok', 'No DRM — unencrypted (free-to-air)', ''); return; }
+    chk('ok', `${cps.length} ContentProtection block(s)`, '');
+    const KNOWN = new Set(['urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed',   // Widevine
+      'urn:uuid:9a04f079-9840-4286-ab92-e65be0885f95',   // PlayReady
+      'urn:uuid:94ce86fb-07ff-4f43-adb8-93d2fa968ca2',   // FairPlay
+      'urn:uuid:e2719d58-a985-b3c9-781a-b030af78d30e',   // ClearKey
+      'urn:uuid:1077efec-c0b2-4d02-ace3-3c1e52e2fb4b']); // Common Encryption
+    let noDrmId = 0, noScheme = 0, unknownSys = 0;
+    for (const cp of cps) {
+      const drmEl = cp.getElementsByTagNameNS(ns, 'DRMSystemId')[0];
+      if (!drmEl) { noDrmId++; continue; }
+      if (!attr(drmEl, 'encryptionScheme')) noScheme++;
+      if (!KNOWN.has(drmEl.textContent.trim().toLowerCase())) unknownSys++;
+    }
+    chk(noDrmId === 0 ? 'ok' : 'fail', '<DRMSystemId> in all ContentProtection blocks',
+      noDrmId ? `${noDrmId} missing` : '');
+    chk(noScheme === 0 ? 'ok' : 'fail', 'encryptionScheme attribute mandatory (§5.5.20)',
+      noScheme ? `${noScheme} missing encryptionScheme` : '');
+    chk(unknownSys === 0 ? 'ok' : 'warn', 'DRM UUIDs recognized (Widevine/PlayReady/FairPlay/ClearKey)',
+      unknownSys ? `${unknownSys} unrecognized UUID(s) — may be custom` : '');
+  });
+
+  // 9. Content Attributes (genre, parental rating)
+  section('Content Attributes', chk => {
+    const svcs3   = all(doc, 'Service');
+    const genreSvcs  = svcs3.filter(s => first(s,'ServiceGenre') || first(s,'Genre'));
+    const pgSvcs     = svcs3.filter(s => first(s,'ParentalRating') || first(s,'ParentalGuidance'));
+    chk(genreSvcs.length > 0 ? 'ok' : 'warn', '<ServiceGenre> set on services',
+      genreSvcs.length ? `${genreSvcs.length}/${svcs3.length}` : 'Optional — helps receivers categorize services');
+    if (pgSvcs.length) {
+      let wrongAge = 0;
+      for (const s of pgSvcs) {
+        const pg = first(s,'ParentalRating') || first(s,'ParentalGuidance');
+        if (pg && !first(pg,'MinimumAge') && !pg.getElementsByTagNameNS(tva,'MinimumAge')[0]) wrongAge++;
+      }
+      chk('ok', `Parental rating on ${pgSvcs.length}/${svcs3.length} service(s)`, '');
+      chk(wrongAge === 0 ? 'ok' : 'warn', 'ParentalRating uses <MinimumAge>',
+        wrongAge ? `${wrongAge} service(s) missing MinimumAge` : '');
+    } else {
+      chk('warn', 'No parental ratings set', 'Optional but recommended for content classification');
+    }
+  });
+
+  // 10. Linked Applications
+  section('Linked Applications (§5.1–5.3)', chk => {
+    const rms = all(doc, 'RelatedMaterial');
+    const linked = rms.filter(rm => {
+      const hr = rm.getElementsByTagNameNS(tva,'HowRelated')[0] || rm.getElementsByTagNameNS(ns,'HowRelated')[0];
+      return hr && (attr(hr,'href') || '').includes('LinkedApplicationCS');
+    });
+    if (!linked.length) { chk('ok', 'No linked applications declared (optional feature)', ''); return; }
+    chk('ok', `${linked.length} linked application(s)`, '');
+    const noUri = linked.filter(rm => {
+      const mu = rm.getElementsByTagNameNS(tva,'MediaUri')[0] || rm.getElementsByTagNameNS(ns,'MediaUri')[0];
+      return !mu || !mu.textContent.trim();
+    }).length;
+    chk(noUri === 0 ? 'ok' : 'fail', 'All linked apps have <MediaUri>',
+      noUri ? `${noUri} missing application URL` : '');
+  });
+
+  return results;
+}
+
+function showComplianceResults(sections) {
+  let totalOk = 0, totalFail = 0, totalWarn = 0;
+  for (const sec of sections) {
+    for (const c of sec.checks) {
+      if (c.status === 'ok') totalOk++;
+      else if (c.status === 'fail') totalFail++;
+      else totalWarn++;
+    }
+  }
+  const total = totalOk + totalFail + totalWarn;
+  const allGreen = !totalFail && !totalWarn;
+  const summary = `<div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1.1rem;font-size:0.88rem;flex-wrap:wrap">
+    <span style="font-size:1.3rem;color:${totalFail ? 'var(--danger)' : totalWarn ? 'var(--warning)' : 'var(--success)'}">●</span>
+    <span style="color:var(--text-2)"><strong>${totalOk}</strong> / <strong>${total}</strong> checks passed</span>
+    ${totalFail ? `<span style="color:var(--danger)">${totalFail} fail${totalFail>1?'s':''}</span>` : ''}
+    ${totalWarn ? `<span style="color:var(--warning)">${totalWarn} warning${totalWarn>1?'s':''}</span>` : ''}
+    ${allGreen ? '<span style="color:var(--success)">Fully compliant</span>' : ''}
+  </div>`;
+
+  const sectionsHTML = sections.map(sec => {
+    const fails = sec.checks.filter(c => c.status === 'fail').length;
+    const warns = sec.checks.filter(c => c.status === 'warn').length;
+    const oks   = sec.checks.filter(c => c.status === 'ok').length;
+    const dotColor = fails > 0 ? 'var(--danger)' : warns > 0 ? 'var(--warning)' : 'var(--success)';
+    const items = sec.checks.map(c => {
+      const cls  = c.status === 'ok' ? 'val-ok' : c.status === 'warn' ? 'val-warn' : 'val-fail';
+      const icon = c.status === 'ok' ? '✓' : c.status === 'warn' ? '⚠' : '✗';
+      return `<div class="val-item ${cls}">
+        <span class="val-icon">${icon}</span>
+        <div><div class="val-label">${esc(c.label)}</div>${c.detail ? `<div class="val-detail">${esc(c.detail)}</div>` : ''}</div>
+      </div>`;
+    }).join('');
+    return `<div class="val-section">
+      <div class="val-section-title" style="display:flex;align-items:center;gap:0.45rem">
+        <span style="color:${dotColor};font-size:0.9rem;line-height:1">●</span>
+        ${esc(sec.title)}
+        <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-3);margin-left:auto">${oks}/${sec.checks.length}</span>
+      </div>
+      ${items}
+    </div>`;
+  }).join('');
+
+  document.getElementById('compliance-results').innerHTML = summary + sectionsHTML;
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+
+init();
+</script>
+</body>
+</html>

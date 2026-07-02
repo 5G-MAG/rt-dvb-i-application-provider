@@ -1,0 +1,21 @@
+name: test
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: ['**']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      # Unit tests. XSD conformance (test:xsd) is opt-in and skips cleanly here since this repo
+      # does not bundle/redistribute third-party schema files — see COMPLIANCE.md.
+      - run: npm test

@@ -1,0 +1,6 @@
+node_modules/
+config-history/
+*.log
+# Third-party XSD schemas are intentionally NOT bundled/committed (see test/xsd-validate.js).
+# If you supply your own locally for testing, keep them out of version control too.
+test/schemas/

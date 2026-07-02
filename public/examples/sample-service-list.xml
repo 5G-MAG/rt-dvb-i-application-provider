@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ServiceList
+  xmlns="urn:dvb:metadata:servicediscovery:2024"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:hls="vnd:apple:mpegurl"
+  xmlns:tva="urn:tva:metadata:2024"
+  xmlns:dvbisd-t="urn:dvb:metadata:servicediscovery-types:2023"
+  id="tag:dvbi.example,2024:servicelist:default"
+  version="6" xml:lang="en">
+
+  <Name>DVB-I Demo Service List</Name>
+  <ProviderName>DVB-I Demo</ProviderName>
+  <LanguageList>
+    <Language>en</Language>
+    <Language>fr</Language>
+    <Language>es</Language>
+  </LanguageList>
+
+  <LCNTableList>
+    <LCNTable>
+      <LCN channelNumber="1" serviceRef="tag:dvbi.example,2024:service:tears-of-steel"/>
+      <LCN channelNumber="2" serviceRef="tag:dvbi.example,2024:service:akamai-dash-uhd"/>
+      <LCN channelNumber="3" serviceRef="tag:dvbi.example,2024:service:akamai-hls-live"/>
+    </LCNTable>
+  </LCNTableList>
+
+  <ContentGuideSourceList>
+    <ContentGuideSource CGSID="dvbi-demo-epg">
+      <ProviderName>DVB-I Demo EPG</ProviderName>
+      <ScheduleInfoEndpoint contentType="application/xml">
+        <dvbisd-t:URI>http://localhost:4000/epg/schedule</dvbisd-t:URI>
+      </ScheduleInfoEndpoint>
+      <ProgramInfoEndpoint contentType="application/xml">
+        <dvbisd-t:URI>http://localhost:4000/epg/nownext</dvbisd-t:URI>
+      </ProgramInfoEndpoint>
+    </ContentGuideSource>
+  </ContentGuideSourceList>
+
+  <!-- Tears of Steel -->
+  <Service version="1">
+    <UniqueIdentifier>tag:dvbi.example,2024:service:tears-of-steel</UniqueIdentifier>
+    <ServiceInstance priority="1">
+      <DisplayName>Tears of Steel (HLS)</DisplayName>
+      <OtherDeliveryParameters extensionName="vnd.apple.mpegurl" xsi:type="hls:m3u8RefType">
+        <hls:UriBasedLocation contentType="application/vnd.apple.mpegurl">
+          <dvbisd-t:URI>https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.m3u8</dvbisd-t:URI>
+        </hls:UriBasedLocation>
+      </OtherDeliveryParameters>
+    </ServiceInstance>
+    <ServiceInstance priority="2">
+      <DisplayName>Tears of Steel (DASH fallback)</DisplayName>
+      <DASHDeliveryParameters>
+        <UriBasedLocation contentType="application/dash+xml">
+          <dvbisd-t:URI>https://demo.unified-streaming.com/k8s/features/stable/video/tears-of-steel/tears-of-steel.ism/.mpd</dvbisd-t:URI>
+        </UriBasedLocation>
+      </DASHDeliveryParameters>
+    </ServiceInstance>
+    <ServiceName xml:lang="en">Tears of Steel</ServiceName>
+    <ServiceName xml:lang="fr">Larmes d&apos;Acier</ServiceName>
+    <ProviderName>Unified Streaming Demo</ProviderName>
+    <RelatedMaterial>
+      <tva:HowRelated href="urn:dvb:metadata:cs:HowRelatedCS:2021:1001.2"/>
+      <tva:MediaLocator>
+        <tva:MediaUri contentType="image/svg+xml">http://localhost:4000/logos/tears-of-steel</tva:MediaUri>
+      </tva:MediaLocator>
+    </RelatedMaterial>
+    <ServiceGenre href="urn:tva:metadata:cs:ContentCS:2011:3.4">
+      <tva:Name xml:lang="en">Film</tva:Name>
+    </ServiceGenre>
+    <ServiceType href="urn:dvb:metadata:cs:ServiceTypeCS:2019:linear"/>
+    <ContentGuideServiceRef>dvbi-demo-epg</ContentGuideServiceRef>
+    <ParentalRating>
+      <MinimumAge>12</MinimumAge>
+    </ParentalRating>
+  </Service>
+  <!-- Akamai UHD Test -->
+  <Service version="1">
+    <UniqueIdentifier>tag:dvbi.example,2024:service:akamai-dash-uhd</UniqueIdentifier>
+    <ServiceInstance priority="1">
+      <DisplayName>Akamai UHD Test (DASH)</DisplayName>
+      <ContentAttributes>
+        <AccessibilityAttributes>
+          <tva:SubtitleAttributes>
+            <tva:Carriage href="urn:tva:metadata:cs:SubtitleCarriageCS:2023:3"/>
+            <tva:Coding href="urn:tva:metadata:cs:SubtitleCodingFormatCS:2023:2.1.3"/>
+            <tva:SubtitleLanguage>en</tva:SubtitleLanguage>
+            <tva:Purpose href="urn:tva:metadata:cs:SubtitlePurposeCS:2023:2"/>
+            <tva:SuitableForTTS>false</tva:SuitableForTTS>
+          </tva:SubtitleAttributes>
+          <tva:AudioDescriptionAttributes><tva:AudioAttributes/></tva:AudioDescriptionAttributes>
+        </AccessibilityAttributes>
+      </ContentAttributes>
+      <DASHDeliveryParameters>
+        <UriBasedLocation contentType="application/dash+xml">
+          <dvbisd-t:URI>https://dash.akamaized.net/dash264/TestCasesUHD/2b/11/MultiRate.mpd</dvbisd-t:URI>
+        </UriBasedLocation>
+      </DASHDeliveryParameters>
+    </ServiceInstance>
+    <ServiceName xml:lang="en">Akamai UHD Test</ServiceName>
+    <ProviderName>Akamai Demo</ProviderName>
+    <RelatedMaterial>
+      <tva:HowRelated href="urn:dvb:metadata:cs:HowRelatedCS:2021:1001.2"/>
+      <tva:MediaLocator>
+        <tva:MediaUri contentType="image/svg+xml">http://localhost:4000/logos/akamai-dash-uhd</tva:MediaUri>
+      </tva:MediaLocator>
+    </RelatedMaterial>
+    <ServiceGenre href="urn:tva:metadata:cs:ContentCS:2011:3.1.3">
+      <tva:Name xml:lang="en">Documentary</tva:Name>
+    </ServiceGenre>
+    <ServiceType href="urn:dvb:metadata:cs:ServiceTypeCS:2019:linear"/>
+    <ContentGuideServiceRef>dvbi-demo-epg</ContentGuideServiceRef>
+  </Service>
+  <!-- Akamai Live Test -->
+  <Service version="1">
+    <UniqueIdentifier>tag:dvbi.example,2024:service:akamai-hls-live</UniqueIdentifier>
+    <ServiceInstance priority="1">
+      <DisplayName>Akamai Live Test (HLS)</DisplayName>
+      <ContentAttributes>
+        <AccessibilityAttributes>
+          <tva:SubtitleAttributes>
+            <tva:Carriage href="urn:tva:metadata:cs:SubtitleCarriageCS:2023:3"/>
+            <tva:Coding href="urn:tva:metadata:cs:SubtitleCodingFormatCS:2023:2.1.3"/>
+            <tva:SubtitleLanguage>en</tva:SubtitleLanguage>
+            <tva:Purpose href="urn:tva:metadata:cs:SubtitlePurposeCS:2023:2"/>
+            <tva:SuitableForTTS>false</tva:SuitableForTTS>
+          </tva:SubtitleAttributes>
+        </AccessibilityAttributes>
+      </ContentAttributes>
+      <OtherDeliveryParameters extensionName="vnd.apple.mpegurl" xsi:type="hls:m3u8RefType">
+        <hls:UriBasedLocation contentType="application/vnd.apple.mpegurl">
+          <dvbisd-t:URI>https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8</dvbisd-t:URI>
+        </hls:UriBasedLocation>
+      </OtherDeliveryParameters>
+    </ServiceInstance>
+    <ServiceName xml:lang="en">Akamai Live Test</ServiceName>
+    <ServiceName xml:lang="es">Akamai Prueba en Vivo</ServiceName>
+    <ProviderName>Akamai Demo</ProviderName>
+    <RelatedMaterial>
+      <tva:HowRelated href="urn:dvb:metadata:cs:HowRelatedCS:2021:1001.2"/>
+      <tva:MediaLocator>
+        <tva:MediaUri contentType="image/svg+xml">http://localhost:4000/logos/akamai-hls-live</tva:MediaUri>
+      </tva:MediaLocator>
+    </RelatedMaterial>
+    <ServiceGenre href="urn:tva:metadata:cs:ContentCS:2011:3.1.1">
+      <tva:Name xml:lang="en">News</tva:Name>
+    </ServiceGenre>
+    <ServiceType href="urn:dvb:metadata:cs:ServiceTypeCS:2019:linear"/>
+    <ContentGuideServiceRef>dvbi-demo-epg</ContentGuideServiceRef>
+  </Service>
+
+</ServiceList>
