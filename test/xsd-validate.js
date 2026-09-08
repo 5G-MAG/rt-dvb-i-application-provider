@@ -3,12 +3,26 @@
  * XSD conformance check for the DVB-I admin generator (optional, bring-your-own schemas).
  *
  * This project does NOT bundle or redistribute the ETSI/DVB XSD schema files (avoids any
- * question of redistribution rights for third-party schema files). To run real XSD validation
- * locally, place the schema closure yourself into test/schemas/ (not committed — see .gitignore):
+ * question of redistribution rights for third-party schema files).
+ *
+ * Point DVBI_SCHEMAS at a directory holding the schema closure, and keep that directory OUTSIDE
+ * this working tree, so the files cannot be committed by accident whatever .gitignore says:
+ *
+ *   DVBI_SCHEMAS=~/.local/share/dvb-i-schemas npm run test:xsd
+ *
+ * Without it, test/schemas/ is used, which is gitignored. Either way the files are yours and stay
+ * yours. The closure is:
  *   - dvbi_v6.0-with-hls-hbbtv.xsd  (urn:dvb:metadata:servicediscovery:2024 + HLS/HbbTV), with its
  *     imports: dvbi_types_v1.0.xsd, tva_metadata_3-1_2024.xsd, tva_mpeg7.xsd, xml.xsd,
  *     hls-url-6.0.xsd, hbbtv-ext-6.0.xsd
  *   - tva_metadata_3-1_2024.xsd (+ tva_mpeg7.xsd) for the EPG check
+ *
+ * Where to get them: the authoritative copies ship with the specification itself. ETSI
+ * TS 103 770 V1.2.1 (2024-09) annex B (normative), "Electronic Attachments", lists dvbi_v6.0.xsd,
+ * dvbi_types_v1.0.xsd, tva_metadata_3-1.xsd and tva_mpeg7.xsd among the contents of the archive
+ * ts_103770v010201p0.zip that accompanies the document, together with the classification scheme
+ * files. Note that the archive ships the base dvbi_v6.0.xsd; the HLS and HbbTV extensions this
+ * generator also emits need the composed variant, which third-party DVB-I tooling publishes.
  *
  * Also requires the devDependency libxmljs2 (native libxml2 binding).
  *
@@ -22,14 +36,32 @@ const fs   = require('fs');
 const path = require('path');
 const http = require('http');
 
-const SCHEMAS = path.join(__dirname, 'schemas');
-const REQUIRED = ['dvbi_v6.0-with-hls-hbbtv.xsd', 'tva_metadata_3-1_2024.xsd'];
-const missing = !fs.existsSync(SCHEMAS) || REQUIRED.some(f => !fs.existsSync(path.join(SCHEMAS, f)));
+// Outside the working tree by preference (DVBI_SCHEMAS), falling back to the gitignored
+// test/schemas/. The schema files are third-party and are never redistributed from here.
+const SCHEMAS = process.env.DVBI_SCHEMAS
+  ? path.resolve(process.env.DVBI_SCHEMAS.replace(/^~(?=$|\/)/, process.env.HOME || '~'))
+  : path.join(__dirname, 'schemas');
+
+// Two closures are usable and they name their files differently, so each schema is resolved by
+// trying its known spellings in order of preference rather than by one fixed name:
+//   - the electronic attachment archive that ships with the specification (authoritative), which
+//     carries the base dvbi_v6.0.xsd and tva_metadata_3-1.xsd
+//   - a composed variant published by third-party DVB-I tooling, which folds the HLS and HbbTV
+//     extensions into the service list schema
+// The base schema does not know the HLS extension, so a list carrying an HLS delivery instance
+// can only be validated against the composed variant. Which files were used is printed on every
+// run, because a conformance result means nothing without knowing what it was checked against.
+const pick = (...names) => names.map(n => path.join(SCHEMAS, n)).find(fs.existsSync);
+const DVBI_FILE = pick('dvbi_v6.0-with-hls-hbbtv.xsd', 'dvbi_v6.0+hls+hbbtv.xsd', 'dvbi_v6.0.xsd');
+const TVA_FILE  = pick('tva_metadata_3-1_2024.xsd', 'tva_metadata_3-1.xsd');
+const missing = !fs.existsSync(SCHEMAS) || !DVBI_FILE || !TVA_FILE;
 
 if (missing) {
-  console.log('XSD conformance check: SKIPPED (no local test/schemas/ directory found).');
-  console.log('This is expected — schemas are not bundled with this project. See the header of');
-  console.log('this file for what to place in test/schemas/ if you want to run real XSD validation.');
+  console.log(`XSD conformance check: SKIPPED (no schema closure at ${SCHEMAS}).`);
+  console.log('This is expected — schemas are not bundled with this project, and are deliberately');
+  console.log('not redistributed from it. Set DVBI_SCHEMAS to a directory outside this working tree');
+  console.log('holding the closure; see the header of this file for the file list and where the');
+  console.log('authoritative copies come from.');
   process.exit(0);
 }
 
@@ -44,11 +76,33 @@ process.chdir(SCHEMAS);
 function loadXsd(file) {
   return libxml.parseXml(fs.readFileSync(path.join(SCHEMAS, file), 'utf8'), { baseUrl: path.join(SCHEMAS, file) });
 }
-const DVBI_XSD = loadXsd('dvbi_v6.0-with-hls-hbbtv.xsd');
-const TVA_XSD  = loadXsd('tva_metadata_3-1_2024.xsd');
+const DVBI_XSD = loadXsd(path.basename(DVBI_FILE));
+const TVA_XSD  = loadXsd(path.basename(TVA_FILE));
+console.log(`Schemas: ${SCHEMAS}`);
+console.log(`  service list: ${path.basename(DVBI_FILE)}`);
+console.log(`  TV-Anytime:   ${path.basename(TVA_FILE)}\n`);
+
+// The HLS delivery signalling this generator can emit is described in TS 103 770 annex G, which is
+// informative, and its schema extension is not part of the normative electronic attachment. A
+// document carrying it therefore cannot be checked against the attachment's base schema: the
+// xsi:type does not resolve and the element's own type is abstract. That is a limit of the closure
+// in use, not a defect in the document, so it is reported as unchecked rather than counted as a
+// failure or, worse, quietly passed over.
+const SCHEMA_HAS_HLS = fs.readFileSync(DVBI_FILE, 'utf8').includes('vnd:apple:mpegurl');
+const usesHls = xml => xml.includes('vnd.apple.mpegurl') || xml.includes('m3u8RefType');
 
 let failures = 0;
+let unchecked = 0;
 function check(label, xmlStr, xsd) {
+  if (xsd === DVBI_XSD && usesHls(xmlStr) && !SCHEMA_HAS_HLS) {
+    unchecked++;
+    console.log(`  ~ ${label}: NOT CHECKED (carries HLS delivery parameters, and ` +
+                `${path.basename(DVBI_FILE)} has no HLS extension). Supply a composed schema to check it.`);
+    return;
+  }
+  return _check(label, xmlStr, xsd);
+}
+function _check(label, xmlStr, xsd) {
   const doc = libxml.parseXml(xmlStr);
   let ok;
   try { ok = doc.validate(xsd); }
@@ -114,7 +168,8 @@ async function main() {
   }
   server.close();
 
-  console.log(`\n==== ${failures === 0 ? 'ALL VALID' : failures + ' FAILURE(S)'} ====`);
+  const note = unchecked ? ` (${unchecked} not checked, see above)` : '';
+  console.log(`\n==== ${failures === 0 ? 'ALL VALID' : failures + ' FAILURE(S)'}${note} ====`);
   process.exit(failures === 0 ? 0 : 1);
 }
 

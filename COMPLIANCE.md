@@ -20,16 +20,48 @@ are unverified: the behaviour they describe is nonetheless XSD-valid against the
 
 ## What is validated, and how
 
-**This project does not bundle or redistribute the ETSI/DVB XSD schema files.** XSD validation
-(`test/xsd-validate.js`, `npm run test:xsd`) is opt-in and bring-your-own-schema: it looks for
-`test/schemas/` locally (gitignored, never committed) and skips cleanly (exit 0) if that directory
-isn't present, so `npm test` stays green with or without it. See the header comment in
-`test/xsd-validate.js` for exactly which files to place there if you want to run it.
+**This project does not bundle or redistribute the ETSI/DVB XSD schema files, and no schema has
+ever been committed to it.** XSD validation (`test/xsd-validate.js`, `npm run test:xsd`) is opt-in
+and bring-your-own-schema. Point `DVBI_SCHEMAS` at a directory holding the closure and keep that
+directory outside this working tree, so the files cannot be committed whatever `.gitignore` says:
+
+```bash
+DVBI_SCHEMAS=~/.local/share/dvb-i-schemas/etsi npm run test:xsd
+```
+
+Without it the run skips cleanly (exit 0), so `npm test` stays green either way.
+
+**Where the authoritative schemas come from.** They ship with the specification. ETSI TS 103 770
+V1.2.1 (2024-09) annex B (normative), "Electronic Attachments", lists `dvbi_v6.0.xsd`,
+`dvbi_types_v1.0.xsd`, `tva_metadata_3-1.xsd` and `tva_mpeg7.xsd` among the contents of the archive
+`ts_103770v010201p0.zip` that accompanies the document, along with the classification scheme files.
+The one file that closure needs and does not contain is W3C's `xml.xsd`.
+
+The run prints which schema files it used, because a conformance result says nothing without it.
 
 | Output | Namespace | Schema (if you supply it locally) |
 |---|---|---|
 | Service list | `urn:dvb:metadata:servicediscovery:2024` | `dvbi_v6.0-with-hls-hbbtv.xsd` (+ import closure) |
 | EPG (schedule / now-next) | `urn:tva:metadata:2024` | `tva_metadata_3-1_2024.xsd` (+ `tva_mpeg7.xsd`) |
+
+**Verification run 2026-09-08, against the specification's own electronic attachment.** The
+generated list, both shipped templates and both EPG endpoints are VALID against `dvbi_v6.0.xsd` and
+`tva_metadata_3-1.xsd` as published in `ts_103770v010201p0.zip`.
+
+One document is reported as not checked rather than valid: the comprehensive test fixture carries an
+HLS delivery instance, and HLS signalling is described in annex G, which is informative, so its
+schema extension is not part of the normative attachment. Against the base schema its `xsi:type`
+does not resolve and the element's own type is abstract. Checking it needs a composed schema that
+folds the HLS extension in, which third-party DVB-I tooling publishes; against such a closure it is
+VALID. Nothing in the demo or the templates depends on this, all of which are DASH only.
+
+**A composed third-party schema is not the authority.** The earlier run below used one, and its
+TV-Anytime schema turns out to differ from the published file in two substantive places, both
+laxer: `Purpose` is `maxOccurs="unbounded"` where the published schema allows one, and
+`ScheduleEvent` is `minOccurs="0"` where the published schema requires at least one. Neither
+weakens the results recorded here, because this generator emits exactly one `Purpose` and never an
+empty `Schedule`, but a validation pass against a mirror is worth less than one against the
+attachment, and the difference was only visible once both were on disk.
 
 **Verification run 2026-09-07.** XSD validation was run again with the schema closure supplied
 locally, and now covers four things rather than one: the comprehensive sample list, the live
