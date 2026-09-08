@@ -272,7 +272,8 @@ const DRM_UUID = {
   clearkey:  'urn:uuid:e2719d58-a985-b3c9-781a-b030af78d30e',
 };
 
-// Linked application HowRelated (A184r2 §5.1 / TS 103 770 §5.2, LinkedApplicationCS:2019).
+// Linked application HowRelated. TS 103 770 V1.2.1 clause 5.2.3.1 requires the RelatedMaterial
+// to carry a HowRelated whose @href comes from urn:dvb:metadata:cs:LinkedApplicationCS:2019.
 // 1.1 = broadcast-related app (media in parallel); use 1.2 for an app controlling media presentation.
 const LINKED_APP_HREF = 'urn:dvb:metadata:cs:LinkedApplicationCS:2019:1.1';
 
@@ -319,7 +320,9 @@ function buildServiceList(base, cfg, opts = {}) {
     enabled = enabled.filter(s => !s.targetRegion || s.targetRegion.toUpperCase().startsWith(requestedCountry));
   }
 
-  // Build per-region LCNTables (A184r2 §4.8): one table per TargetRegion, plus a global table
+  // Build per-region LCNTables: one table per TargetRegion, plus a global table for services
+  // with none. TS 103 770 V1.2.1 clause 5.5.12, table 25, row TargetRegion: a table names the
+  // regions where it applies, and a table without one is applicable anywhere.
   const regionLCNMap = {};
   const globalLCNEntries = [];
   for (const s of enabled) {
@@ -505,7 +508,8 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
       </tva:MediaLocator>
     </RelatedMaterial>`;
 
-    // Linked application RelatedMaterial (A184r2 §5.1): app launched by the receiver.
+    // Linked application RelatedMaterial (TS 103 770 V1.2.1 clause 5.2.3.1): app launched by the
+    // receiver.
     // contentType is the field the receiver consumes; HowRelated marks it as a linked app.
     const linkedAppEl = s.linkedApp?.url ? `
     <RelatedMaterial>
@@ -598,7 +602,8 @@ ${serviceBlocks}
 }
 
 app.get('/service-list.xml', (req, res) => {
-  // Conditional GET per §4.3.3.7 / A184r2 §4.11
+  // Conditional GET per TS 103 770 V1.2.1 clause 4.3.2.2 (If-Modified-Since headers); A184r2
+  // clause 4.11 covers when a client refreshes the list.
   const ifModSince = req.headers['if-modified-since'];
   if (ifModSince) {
     const d = new Date(ifModSince);

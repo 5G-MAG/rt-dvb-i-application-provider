@@ -19,9 +19,21 @@ A177 Rev.8, the draft of V1.3.1, moves to `:2026` namespaces throughout. It is *
 here and output has not been checked against it. Adopting it would be a deliberate migration to a
 new namespace and schema version, made when it is published, not a correction to make now.
 
-Several comments in `server.js` cite DVB Document A184r2 for the linked-application and LCN-table
-rules. That document was not available when this record was written, so those particular citations
-are unverified: the behaviour they describe is nonetheless XSD-valid against the v6.0 schema.
+**Secondary reference.** DVB Document A184r2, "Implementation Guidelines for DVB-I" (July 2025), is
+guidance for client implementers rather than a normative format specification. Every citation of it
+in `server.js` was checked against the document on 2026-09-08, and three of the five were wrong:
+
+- LCN tables were attributed to its clause 4.8, which is "Region targeting"; the LCN guidance is in
+  clause 4.3, and in any case it describes what a *client* does with LCN tables, not how a list is
+  generated. Now cited to what actually governs the output: TS 103 770 V1.2.1 clause 5.5.12,
+  table 25, row TargetRegion.
+- The linked application was attributed to its clause 5.1, which is a general note on application
+  technologies. The requirement is TS 103 770 V1.2.1 clause 5.2.3.1.
+- Conditional GET was attributed to TS 103 770 clause 4.3.3.7, which is the back-off algorithm.
+  If-Modified-Since is clause 4.3.2.2.
+
+The two remaining citations, clause 4.5 (Interpreting Program Schedules) and clause 4.11 (Channel
+list updates), are correct and are kept.
 
 ## What is validated, and how
 
