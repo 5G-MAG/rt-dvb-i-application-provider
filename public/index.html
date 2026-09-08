@@ -407,6 +407,8 @@
     <div class="section-head-title">Services</div>
     <div style="display:flex;gap:0.4rem">
       <button class="btn btn-ghost btn-sm" onclick="autoNumberLCN()" title="Assign LCN 1, 2, 3… to services in current display order">Auto LCN</button>
+      <select id="template-select" class="btn btn-ghost btn-sm" style="max-width:260px" title="Ready-made starting points from the server's templates/ directory"></select>
+      <button class="btn btn-ghost btn-sm" onclick="loadTemplate()" title="Load the selected template">Load Template</button>
       <button class="btn btn-ghost btn-sm" onclick="openModal(null)">+ Add Service</button>
     </div>
   </div>
@@ -759,6 +761,7 @@ async function init() {
   config = await fetch('/api/config').then(r => r.json());
   populateSettings();
   renderServices();
+  refreshTemplates();
   refreshXML();
   document.getElementById('live-url').textContent = window.location.origin + '/service-list.xml';
   refreshSourceInfo();
@@ -868,10 +871,12 @@ async function saveAll() {
 
 // ── Modal open/close ──────────────────────────────────────────────────────────
 
-function openModal(idx) {
+function openModal(idx, preset) {
   editingId = idx;
-  const svc = idx !== null ? config.services[idx] : newService();
-  document.getElementById('modal-title').textContent = idx !== null ? `Edit: ${svc.name}` : 'Add Service';
+  // preset applies only when adding: an edit always shows the stored service, never a template.
+  const svc = idx !== null ? config.services[idx] : (preset || newService());
+  document.getElementById('modal-title').textContent =
+    idx !== null ? `Edit: ${svc.name}` : (preset ? 'Add Service (from template)' : 'Add Service');
   document.getElementById('m-name').value        = svc.name        || '';
   document.getElementById('m-provider').value    = svc.provider    || '';
   document.getElementById('m-lcn').value         = svc.lcn != null ? svc.lcn : '';
@@ -905,6 +910,94 @@ function openModal(idx) {
 
 function closeModal() { document.getElementById('modal-overlay').hidden = true; }
 function overlayClose(e) { if (e.target.id === 'modal-overlay') closeModal(); }
+
+// ── Templates ─────────────────────────────────────────────────────────────────
+// Starting points served from the server's templates/ directory. Two kinds: a "service" template
+// opens the editor pre-filled, a "list" template replaces the whole line-up. Neither saves
+// anything on its own; the operator still has to save, then publish.
+
+let templateIndex = [];
+
+async function refreshTemplates() {
+  const sel = document.getElementById('template-select');
+  try {
+    templateIndex = await fetch('/api/templates').then(r => r.json());
+  } catch { templateIndex = []; }
+  if (!Array.isArray(templateIndex) || !templateIndex.length) {
+    sel.innerHTML = '<option value="">No templates</option>';
+    sel.disabled = true;
+    return;
+  }
+  sel.disabled = false;
+  sel.innerHTML = templateIndex.map(t => {
+    const what = t.kind === 'list' ? `${t.serviceCount} services` : t.kind;
+    return `<option value="${esc(t.file)}">${esc(t.name)} (${esc(what)})</option>`;
+  }).join('');
+}
+
+async function loadTemplate() {
+  const file = document.getElementById('template-select').value;
+  if (!file) { showToast('No template selected.', 'error'); return; }
+  let tpl;
+  try {
+    const res = await fetch(`/api/templates/${encodeURIComponent(file)}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `HTTP ${res.status}`);
+    }
+    tpl = await res.json();
+  } catch (e) {
+    showToast(`Could not load the template: ${e.message || e}`, 'error');
+    return;
+  }
+  if (tpl.kind === 'list') return applyListTemplate(tpl);
+  return applyServiceTemplate(tpl.service);
+}
+
+// A list template replaces the line-up outright, so it asks first: the services currently in the
+// editor are lost if they were never published, and replaced in the next publish if they were.
+function applyListTemplate(tpl) {
+  const list = tpl.list || {};
+  const incoming = Array.isArray(list.services) ? list.services : [];
+  const n = config.services.length;
+  if (n && !confirm(`Replace the ${n} service(s) in this list with the ${incoming.length} from "${tpl.name}"?`)) return;
+  if (list.listName)     config.listName     = list.listName;
+  if (list.providerName) config.providerName = list.providerName;
+  if (list.listLang)     config.listLang     = list.listLang;
+  if (list.epg)          config.epg          = list.epg;
+  config.services = JSON.parse(JSON.stringify(incoming));
+  populateSettings();
+  renderServices();
+  refreshXML();
+  showToast(`Loaded ${incoming.length} service(s) from the template. Click Save & Publish.`, 'success');
+}
+
+// A service template opens the editor rather than saving, so it can be edited down first.
+function applyServiceTemplate(svc) {
+  if (!svc) { showToast('That template contains no service.', 'error'); return; }
+  svc = JSON.parse(JSON.stringify(svc));
+
+  // The template carries fixed ids, so loading it twice would otherwise produce two services
+  // sharing an id and a UID. Both must be unique: the id keys the logo endpoint, and the UID is
+  // what the LCN table and the receiver's own service references point at.
+  const taken    = new Set(config.services.map(x => x.id));
+  const takenUid = new Set(config.services.map(x => x.uid));
+  if (taken.has(svc.id) || takenUid.has(svc.uid)) {
+    let n = 2;
+    while (taken.has(`${svc.id}-${n}`) || takenUid.has(`${svc.uid}-${n}`)) n++;
+    svc.id  = `${svc.id}-${n}`;
+    svc.uid = `${svc.uid}-${n}`;
+    svc.instances = (svc.instances || []).map(inst => ({ ...inst, id: `${inst.id}-${n}` }));
+  }
+
+  // Next free LCN after the ones already in use, so the template never lands on an occupied
+  // number. The template's own lcn is only a fallback for an empty list.
+  const used = config.services.map(x => x.lcn).filter(v => v != null);
+  if (used.length) svc.lcn = Math.max(...used) + 1;
+
+  openModal(null, svc);
+  showToast('Template loaded. Edit the fields, then Save Service.', 'success');
+}
 
 function newService() {
   return {

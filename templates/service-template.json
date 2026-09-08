@@ -1,0 +1,95 @@
+{
+  "_comment": [
+    "A reference DVB-I service with every service-level field populated, delivered over DASH.",
+    "Loaded by the Templates control next to '+ Add Service'.",
+    "",
+    "Loading a template does not save anything. It opens the service editor pre-filled, so this is",
+    "a starting point and a way to see what each field looks like when set. Nothing reaches the",
+    "published list until Save Service, then Save & Publish.",
+    "",
+    "One field is deliberately left empty: customEpgUrl overrides the list-level content guide for",
+    "this service, so pointing it at a URL that does not serve TV-Anytime removes the guide instead",
+    "of enriching it, and the right value is deployment-specific.",
+    "",
+    "subtitleLanguage has no control in the editor UI but is honoured when generating the list: it",
+    "fills tva:SubtitleLanguage, and falls back to the service's first language, then the list",
+    "language, when absent."
+  ],
+  "name": "Reference service (all fields, DASH)",
+  "kind": "service",
+  "service": {
+    "id": "example-channel",
+    "uid": "tag:example.com,2026:service:example-channel",
+    "version": 1,
+    "enabled": true,
+
+    "name": "Example Channel",
+    "provider": "Example Media",
+    "lcn": 100,
+    "type": "linear",
+    "genre": "entertainment",
+    "parentalRating": 12,
+
+    "logoLetters": "EX",
+    "logoBg": "#2c3e50",
+    "logoUrl": "/5gmag.png",
+
+    "languages": [
+      { "lang": "en", "name": "Example Channel" },
+      { "lang": "fr", "name": "Chaine Exemple" }
+    ],
+
+    "targetRegion": "EUR",
+    "subscriptionPackage": "Basic",
+    "customEpgUrl": "",
+    "availableFrom": "2026-01-01T00:00:00.000Z",
+    "availableTo": "2030-12-31T23:59:59.000Z",
+
+    "linkedApp": {
+      "url": "https://example.com/apps/example-channel/",
+      "contentType": "text/html"
+    },
+
+    "instances": [
+      {
+        "id": "inst-example-dash",
+        "label": "Example Channel (DASH)",
+        "priority": 1,
+        "type": "dash",
+        "url": "https://example.com/live/example-channel/manifest.mpd",
+        "hasAudioDescription": true,
+        "hasHardOfHearing": true,
+        "subtitleCarriage": 3,
+        "subtitleLanguage": "en",
+        "drmSystems": []
+      }
+    ],
+
+    "epgPrograms": [
+      {
+        "title": "Morning Report",
+        "dur": 60,
+        "desc": "The day's news, business and weather.",
+        "genre": "news",
+        "parentalAge": 0,
+        "image": "https://example.com/images/morning-report.jpg",
+        "seriesTitle": null,
+        "seriesNumber": null,
+        "episodeNumber": null,
+        "catchupUrl": null
+      },
+      {
+        "title": "The Long Road",
+        "dur": 45,
+        "desc": "Ana follows a lead north, and finds the town expecting her.",
+        "genre": "drama",
+        "parentalAge": 12,
+        "image": "https://example.com/images/the-long-road-s2e4.jpg",
+        "seriesTitle": "The Long Road",
+        "seriesNumber": 2,
+        "episodeNumber": 4,
+        "catchupUrl": "https://example.com/catchup/the-long-road/s2e4"
+      }
+    ]
+  }
+}

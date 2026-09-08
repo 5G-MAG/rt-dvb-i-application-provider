@@ -33,6 +33,7 @@ const logger = {
 const CONFIG_PATH  = path.join(__dirname, 'config.json');
 const LOGOS_DIR    = path.join(__dirname, 'public', 'logos', 'uploaded');
 const HISTORY_DIR  = path.join(__dirname, 'config-history');
+const TEMPLATES_DIR = path.join(__dirname, 'templates');
 
 fs.mkdirSync(LOGOS_DIR,   { recursive: true });
 fs.mkdirSync(HISTORY_DIR, { recursive: true });
@@ -795,6 +796,61 @@ app.get('/api/config/meta', requireAdmin, (req, res) => {
     const st = fs.statSync(CONFIG_PATH);
     res.json({ path: CONFIG_PATH, lastModified: st.mtime.toISOString(), sizeBytes: st.size, version: config.version || null });
   } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+});
+
+// Templates: ready-made starting points kept as JSON files in templates/, listed and loaded by the
+// editor's Templates control. Two kinds, distinguished by the file's own "kind":
+//   "service"  one service, opened in the editor pre-filled
+//   "list"     a whole line-up, replacing the services in the current list
+// Read from disk on each request rather than cached at startup, so editing or adding a file changes
+// what the control offers without restarting the server. Nothing here writes to config.json: a
+// template only reaches the published list once the operator saves it.
+
+function readTemplate(file) {
+  const raw = JSON.parse(fs.readFileSync(path.join(TEMPLATES_DIR, file), 'utf8'));
+  const kind = raw.kind === 'list' ? 'list' : 'service';
+  const body = kind === 'list' ? raw.list : raw.service;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new Error(`${file} must contain a "${kind}" object`);
+  }
+  if (_hasUnsafeKeys(body)) throw new Error(`${file} contains disallowed keys`);
+  const services = kind === 'list' ? (Array.isArray(body.services) ? body.services : []) : [body];
+  return { file, kind, name: raw.name || file.replace(/\.json$/, ''), services, body };
+}
+
+app.get('/api/templates', requireAdmin, (req, res) => {
+  let files;
+  try { files = fs.readdirSync(TEMPLATES_DIR).filter(f => f.endsWith('.json')).sort(); }
+  catch { return res.json([]); }   // no templates directory is not an error, just nothing to offer
+  const out = [];
+  for (const file of files) {
+    // One unreadable file must not hide the rest, so report it in place rather than failing the
+    // whole listing: the operator can still load the others and can see which file to fix.
+    try {
+      const t = readTemplate(file);
+      out.push({ file: t.file, kind: t.kind, name: t.name, serviceCount: t.services.length });
+    } catch (e) {
+      logger.warn('Unreadable template', { file, error: String(e.message || e) });
+      out.push({ file, kind: 'invalid', name: `${file} (unreadable)`, serviceCount: 0, error: String(e.message || e) });
+    }
+  }
+  res.json(out);
+});
+
+app.get('/api/templates/:file', requireAdmin, (req, res) => {
+  const file = req.params.file;
+  // Confine the read to templates/: the name is a single .json filename, never a path.
+  if (!/^[A-Za-z0-9._-]+\.json$/.test(file) || file.includes('..')) {
+    return res.status(400).json({ error: 'Invalid template name' });
+  }
+  try {
+    const t = readTemplate(file);
+    res.json({ file: t.file, kind: t.kind, name: t.name, [t.kind]: t.body });
+  } catch (e) {
+    const code = e.code === 'ENOENT' ? 404 : 500;
+    logger.error('Template read error', { file, error: String(e.message || e) });
+    res.status(code).json({ error: code === 404 ? 'No such template' : String(e.message || e) });
+  }
 });
 
 // Reject configs carrying prototype-pollution keys before they are stored/merged (defense-in-depth)

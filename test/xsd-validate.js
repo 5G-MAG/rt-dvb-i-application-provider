@@ -61,6 +61,25 @@ function check(label, xmlStr, xsd) {
   }
 }
 
+// Renders a template's services through the real generator, so a template that would produce an
+// invalid list fails here rather than when someone loads it. Templates are starting points people
+// copy, so an invalid one propagates.
+function checkTemplates(sample) {
+  const dir = path.join(__dirname, '..', 'templates');
+  let files = [];
+  try { files = fs.readdirSync(dir).filter(f => f.endsWith('.json')).sort(); } catch { /* none */ }
+  if (!files.length) { console.log('  (no templates/ directory — skipped)'); return; }
+  for (const file of files) {
+    const raw = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
+    const services = raw.kind === 'list'
+      ? (raw.list && raw.list.services) || []
+      : (raw.service ? [raw.service] : []);
+    if (!services.length) { console.log(`  ✗ ${file}: contains no service`); failures++; continue; }
+    const cfg = { ...sample, ...(raw.kind === 'list' ? raw.list : {}), services };
+    check(file, buildServiceList('http://localhost:4000', cfg), DVBI_XSD);
+  }
+}
+
 async function main() {
   console.log('DVB-I / TV-Anytime XSD conformance test\n');
 
@@ -69,7 +88,16 @@ async function main() {
   console.log('Service list (comprehensive sample):');
   check('service-list.xml', buildServiceList('http://localhost:4000', sample), DVBI_XSD);
 
-  // 2) EPG — spin up the app against the live config.json and validate the real endpoints
+  // 2) The operator's own list, whatever it currently holds
+  console.log('\nService list (live config.json):');
+  const liveCfg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.json'), 'utf8'));
+  check('config.json', buildServiceList('http://localhost:4000', liveCfg), DVBI_XSD);
+
+  // 3) Every template offered by the Templates control
+  console.log('\nService list (templates/):');
+  checkTemplates(sample);
+
+  // 4) EPG — spin up the app against the live config.json and validate the real endpoints
   console.log('\nEPG (live config.json endpoints):');
   const server = app.listen(0);
   await new Promise(r => server.once('listening', r));
