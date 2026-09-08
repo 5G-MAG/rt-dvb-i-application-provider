@@ -4,3 +4,7 @@ config-history/
 # Third-party XSD schemas are intentionally NOT bundled/committed (see test/xsd-validate.js).
 # If you supply your own locally for testing, keep them out of version control too.
 test/schemas/
+
+# Logos uploaded through the editor at runtime. Operator content, written into the tree by
+# the running server, not part of the source.
+public/logos/uploaded/
