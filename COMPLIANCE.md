@@ -107,15 +107,19 @@ schema-valid document can still name a term that does not exist. `npm run test:c
 (`test/cs-validate.js`) closes part of that gap by checking every emitted term against the scheme
 files themselves, which ship in the same electronic attachment archive as the schemas.
 
-As of 2026-09-08, against those files: **13 terms checked across the sample list, the live config,
-both templates and both EPG endpoints, all present in their schemes.**
+As of 2026-09-08: **all 38 terms checked across the sample list, the live config, both templates
+and both EPG endpoints are present in their schemes. None is unchecked.**
 
-**25 references are reported unchecked, not valid.** They cite TV-Anytime's own schemes
-(`ContentCS:2011`, `SubtitleCarriageCS:2023`, `SubtitleCodingFormatCS:2023`,
-`SubtitlePurposeCS:2023`, and TVA's `HowRelatedCS:2012`), which are published with
-ETSI TS 102 822-3-1 rather than in the TS 103 770 archive. That is the larger half, and it covers
-`ContentCS`, where one of the three historical CS defects was. Closing it needs that document's
-own attachment; until then those terms rest on the one-off manual check recorded below.
+That covers both publishers' schemes. The DVB ones come with TS 103 770's archive; the TV-Anytime
+ones (`ContentCS:2011`, `HowRelatedCS:2012`, `SubtitleCarriageCS:2023`,
+`SubtitleCodingFormatCS:2023`, `SubtitlePurposeCS:2023`) are published with **ETSI TS 102 822-3-1**,
+whose own attachment archive `ts_1028220301v011301p0.zip` (V1.13.1, 2024-05) carries them. Put both
+sets in the directory `DVBI_SCHEMAS` names.
+
+The coverage was checked by mutation rather than assumed: introducing a `SubtitlePurposeCS` term
+and a `ContentCS` termID that do not exist makes the run name the offending term and fail, and
+reverting restores the pass. This matters because `ContentCS` is where one of the three historical
+CS defects was, and it had been resting on a one-off manual check until now.
 
 The emitted terms were originally verified by hand against the DVB/TVA CS registries and corrected
 where wrong:

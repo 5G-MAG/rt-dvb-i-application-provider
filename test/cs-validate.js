@@ -17,9 +17,13 @@
  *   DVBI_SCHEMAS=~/.local/share/dvb-i-schemas/etsi npm run test:cs
  *
  * TV-Anytime's own schemes (ContentCS, SubtitleCarriageCS, SubtitleCodingFormatCS,
- * SubtitlePurposeCS, and TVA's HowRelatedCS) are published with ETSI TS 102 822-3-1, not in that
- * archive. Terms citing a scheme whose file is absent are reported as unchecked, never as valid:
- * an unchecked term is exactly the kind that was wrong before.
+ * SubtitlePurposeCS, and TVA's HowRelatedCS) are published separately, with ETSI TS 102 822-3-1,
+ * whose own electronic attachment archive (ts_1028220301v011301p0.zip for V1.13.1) carries them
+ * under "electronic attachments/". Put those alongside the DVB ones in the same directory to cover
+ * every scheme this generator cites.
+ *
+ * Terms citing a scheme whose file is absent are reported as unchecked, never as valid: an
+ * unchecked term is exactly the kind that was wrong before.
  *
  * Exit code 0 = every checkable term exists (or skipped), 1 = a term is not in its scheme.
  */
