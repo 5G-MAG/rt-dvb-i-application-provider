@@ -1,6 +1,22 @@
 # DVB-I / TV-Anytime Compliance Status
 
-Last verified: 2026-07-01.
+Last verified: 2026-09-07.
+
+## Baseline
+
+The generator targets **ETSI TS 103 770 V1.2.1 (2024-09)**, "Service Discovery and Programme
+Metadata for DVB-I". That issue is what the emitted namespaces belong to
+(`urn:dvb:metadata:servicediscovery:2024`, `urn:dvb:metadata:servicediscovery-types:2023`,
+`urn:tva:metadata:2024`), which is how the version was determined rather than chosen.
+
+DVB Document A177 Rev.8 (June 2026, draft) is a later issue of the same specification and moves to
+`:2026` namespaces throughout. It is **not** the baseline here, and output has not been re-checked
+against it. Migrating would be a deliberate change of namespace and schema version, not a
+correction.
+
+Several comments in `server.js` cite DVB Document A184r2 for the linked-application and LCN-table
+rules. That document was not available when this record was written, so those particular citations
+are unverified: the behaviour they describe is nonetheless XSD-valid against the v6.0 schema.
 
 ## What is validated, and how
 
@@ -14,6 +30,28 @@ isn't present, so `npm test` stays green with or without it. See the header comm
 |---|---|---|
 | Service list | `urn:dvb:metadata:servicediscovery:2024` | `dvbi_v6.0-with-hls-hbbtv.xsd` (+ import closure) |
 | EPG (schedule / now-next) | `urn:tva:metadata:2024` | `tva_metadata_3-1_2024.xsd` (+ `tva_mpeg7.xsd`) |
+
+**Verification run 2026-09-07.** XSD validation was run again with the schema closure supplied
+locally, and now covers four things rather than one: the comprehensive sample list, the live
+`config.json`, every file in `templates/`, and both EPG endpoints. All pass. It found two real
+defects, both since fixed:
+
+1. **`TVAMain` emitted without `@xml:lang`.** The empty documents returned when a service had no
+   programmes, and when no service matched the requested `sid`, omitted the attribute that
+   `tva_metadata_3-1_2024.xsd` marks `use="required"` on `TVAMainType`. TS 103 770 V1.2.1 clause
+   6.10.1.2 states the same obligation in prose. The populated responses were always correct; only
+   the empty ones were not, which is why manual reading had missed it.
+2. **Absolute `logoUrl` values were concatenated onto the base URL**, producing a `tva:MediaUri` of
+   the form `http://hosthttp://host/...`, which is not a valid `xs:anyURI`. The editor's own "Logo
+   Image URL" field invites an absolute URL, so this was reachable straight from the UI. Relative
+   values (what the logo upload stores) were unaffected. The generator now resolves only the
+   relative form against the base.
+
+A third issue was found in data rather than code and is worth knowing about when composing a list:
+**`ContentGuideSource/@CGSID` is typed `xs:ID`**, so it must be an NCName and cannot begin with a
+digit. The provider does not currently reject a non-conformant value on entry, so an id such as
+`5g-mag-epg` is accepted by the editor and produces a list that fails schema validation. See
+"Known limitations" below.
 
 **Historical note (2026-07-01):** during development, this generator's output WAS machine-validated
 against the real schemas (sourced temporarily from the `paulhiggs/dvb-i-tools` GitHub repo, BSD
@@ -39,6 +77,12 @@ The emitted terms were separately verified against the DVB/TVA CS registries and
 
 ## Known limitations / not done
 
+- **`@CGSID` is not validated on entry.** It is typed `xs:ID` by the schema
+  (`ContentGuideProviderIdType`), so a value beginning with a digit, or containing a space or a
+  colon, produces a list that fails XSD validation. The editor accepts it and the generator emits
+  it unchanged, deliberately: silently rewriting an operator's identifier would break the
+  `ContentGuideServiceRef` values pointing at it. `npm run test:xsd` catches it when schemas are
+  supplied.
 - **XSD validation is not part of CI** (as of 2026-07-01) — the schema files are not bundled (see
   above), so CI only runs the unit tests. `npm run test:xsd` remains available for local use if you
   supply your own copy of the schemas.
@@ -52,7 +96,7 @@ The emitted terms were separately verified against the DVB/TVA CS registries and
   inline event handlers. Dropping it requires migrating all handlers to `addEventListener`. The E2E
   suite (below) already caught and fixed one real CSP defect (Google Fonts blocked); it would catch
   further regressions in whatever resource paths the test's page load exercises, but not a full audit.
-- **In-browser E2E**: `dvb-i-receiver/test/e2e.test.js` runs a real headless Chromium (Playwright) —
+- **In-browser E2E**: `rt-dvb-i-application/test/e2e.test.js` runs a real headless Chromium (Playwright) —
   loads the app, fetches a compliant fixture list, and verifies channel rendering/selection. This is a
   smoke test, not full coverage: dash.js/hls.js playback (DVR window, track selection, DRM) is not
   exercised because it needs real media segments, which the fixture's placeholder URLs don't provide.

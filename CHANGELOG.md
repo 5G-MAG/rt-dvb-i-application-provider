@@ -1,4 +1,47 @@
-# Changelog — dvb-i-admin
+# Changelog — rt-dvb-i-application-provider
+
+## 2026-09 — Templates, EPG and logo URL conformance fixes
+
+**Conformance fixes** (both found by running `npm run test:xsd` with the schema closure supplied
+locally; see COMPLIANCE.md for the full record):
+
+- **`TVAMain` without `@xml:lang`.** `/epg/schedule` and `/epg/nownext` returned empty TV-Anytime
+  documents that omitted `@xml:lang`, which `TVAMainType` marks required. Fixed, and the two empty
+  responses now come from one helper so the attribute cannot be forgotten again.
+- **Empty EPG answered with 404.** A service that exists but carries no programmes was answered
+  with 404, which per TS 103 770 V1.2.1 clause 4.3.3.4 makes a client re-acquire the whole service
+  list and then apply the back-off model of clause 4.3.3.7. It is now an empty but valid document
+  with 200. 404 is kept for a `sid` that names no service in the list, which is the case that
+  clause actually describes.
+- **Absolute `logoUrl` corrupted.** An absolute logo URL, which the editor's own "Logo Image URL"
+  field invites, was concatenated onto the base URL and emitted as
+  `http://hosthttp://host/...`, not a valid `xs:anyURI`. Only relative values are resolved against
+  the base now.
+
+**Templates.** A `templates/` directory of ready-made starting points, offered by a selector next
+to *+ Add Service* and loaded with the button beside it. Two kinds, set by each file's own `kind`:
+
+- `service` opens the editor pre-filled with one service. `service-template.json` ships a reference
+  service with every supported field populated, delivered over DASH.
+- `list` replaces the whole line-up, after asking. `dvbi-local-live-demo.json` ships the DVB-I live
+  demo's channels, generated from that demo's own `channels.json`.
+
+Served by `GET /api/templates` and `GET /api/templates/:file`, read from disk on each request, so
+adding or editing a file changes what the selector offers without a restart. Loading a service
+template twice does not collide: the second copy gets a distinct `id` and `uid`, its instance ids
+follow, and it takes the next free LCN. Nothing is stored until the operator saves and publishes.
+
+**Editor hint on multi-language names.** The *Multi-language Service Names* section now says that
+its entries replace the Service Name in the published list. They always did: `ServiceName` is built
+from them whenever a service has any, so renaming a service while leaving a stale entry behind
+produced a list that still carried the old name, with nothing on screen explaining why.
+
+**Testing.** `npm run test:xsd` now validates the live `config.json` and every file in `templates/`
+in addition to the comprehensive sample and the EPG endpoints, so a template that would produce an
+invalid list fails in the test rather than when someone loads it.
+
+**Renamed** from `dvb-i-admin` to `rt-dvb-i-application-provider`, alongside `dvb-i-client` becoming
+`rt-dvb-i-application`.
 
 ## 2026-07 (cont. 2) — Removed bundled third-party XSD schemas
 
