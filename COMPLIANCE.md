@@ -9,10 +9,15 @@ Metadata for DVB-I". That issue is what the emitted namespaces belong to
 (`urn:dvb:metadata:servicediscovery:2024`, `urn:dvb:metadata:servicediscovery-types:2023`,
 `urn:tva:metadata:2024`), which is how the version was determined rather than chosen.
 
-DVB Document A177 Rev.8 (June 2026, draft) is a later issue of the same specification and moves to
-`:2026` namespaces throughout. It is **not** the baseline here, and output has not been re-checked
-against it. Migrating would be a deliberate change of namespace and schema version, not a
-correction.
+**V1.2.1 is the current published issue.** Checked 2026-09-08 against the DVB Project's own
+standards page for this specification, which lists `TS 103 770 V1.2.1` dated 05.09.2024 as the
+published standard and `DVB BlueBook A177r8 (Draft TS 103 770 V1.3.1)` dated 30.06.2026 as the
+latest draft. So the baseline is not merely the issue we happen to hold: it is the newest one
+published.
+
+A177 Rev.8, the draft of V1.3.1, moves to `:2026` namespaces throughout. It is **not** the baseline
+here and output has not been checked against it. Adopting it would be a deliberate migration to a
+new namespace and schema version, made when it is published, not a correction to make now.
 
 Several comments in `server.js` cite DVB Document A184r2 for the linked-application and LCN-table
 rules. That document was not available when this record was written, so those particular citations
