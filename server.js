@@ -587,14 +587,28 @@ function buildSchedule(progs) {
   return items;
 }
 
+// An empty TV-Anytime document, used for both "this service carries no programmes" and "no such
+// service". @xml:lang is required on TVAMainType by the TV-Anytime schema (tva_metadata_3-1_2024.xsd:
+// <attribute ref="xml:lang" use="required"/>), and TS 103 770 V1.2.1 clause 6.10.1.2 states:
+// "TV-Anytime requires that the default language used in a TV-Anytime document is specified at the
+// top level with the TVAMain element using the @xml:lang attribute." Emitting one without it makes
+// the response fail schema validation, which is what this helper exists to prevent repeating.
+function emptyTVAMain(cfg) {
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<TVAMain xmlns="urn:tva:metadata:2024" xmlns:mpeg7="urn:tva:mpeg7:2008" xml:lang="${xe(cfg.listLang || 'en')}"/>`;
+}
+
 app.get('/epg/schedule', (req, res) => {
   const serviceId = req.query.sid || req.query.serviceId; // sid is spec-compliant (§6.5.2.2)
   const svc   = config.services.find(s => s.uid === serviceId);
   const progs = svc?.epgPrograms;
-  if (!progs?.length) {
-    return res.status(404).type('xml')
-      .send('<?xml version="1.0"?><TVAMain xmlns="urn:tva:metadata:2024" xmlns:mpeg7="urn:tva:mpeg7:2008"/>');
-  }
+  // A service that exists but carries no programmes is not an error, and must not be answered with
+  // 404: per TS 103 770 V1.2.1 clause 4.3.3.4, a 404 from a ContentGuideSource API URL makes the
+  // client re-acquire the whole Service List and then apply the back-off model of clause 4.3.3.7.
+  // Spending that on the normal "nothing scheduled" case is wrong, so an empty but valid document
+  // is returned with 200 instead. 404 is kept for a sid that names no service in this list, which
+  // is the condition that clause actually describes.
+  if (!svc) return res.status(404).type('xml').send(emptyTVAMain(config));
+  if (!progs?.length) return res.type('xml').send(emptyTVAMain(config));
   const sched = buildSchedule(progs);
 
   // Build series CRIDs for GroupInformation/MemberOf (§6.10.17)
@@ -713,18 +727,15 @@ app.get('/epg/nownext', (req, res) => {
   const serviceId = req.query.sid || req.query.serviceId;
   const svc   = config.services.find(s => s.uid === serviceId);
   const progs = svc?.epgPrograms;
-  if (!progs?.length) {
-    return res.status(404).type('xml')
-      .send('<?xml version="1.0"?><TVAMain xmlns="urn:tva:metadata:2024" xmlns:mpeg7="urn:tva:mpeg7:2008"/>');
-  }
+  // Same split as /epg/schedule above: unknown service is 404, known service with nothing to
+  // announce is an empty document with 200.
+  if (!svc) return res.status(404).type('xml').send(emptyTVAMain(config));
+  if (!progs?.length) return res.type('xml').send(emptyTVAMain(config));
   const sched = buildSchedule(progs);
   const now   = Date.now();
   const curIdx = sched.findIndex(p => p.startMs <= now && p.endMs > now);
   const toEmit = curIdx >= 0 ? sched.slice(curIdx, curIdx + 2) : sched.slice(0, 1);
-  if (!toEmit.length) {
-    return res.status(404).type('xml')
-      .send('<?xml version="1.0"?><TVAMain xmlns="urn:tva:metadata:2024" xmlns:mpeg7="urn:tva:mpeg7:2008"/>');
-  }
+  if (!toEmit.length) return res.type('xml').send(emptyTVAMain(config));
   const progInfo2 = toEmit.map(p => {
     const pgEl = p.parentalAge != null && p.parentalAge !== ''
       ? `\n        <ParentalGuidance><mpeg7:MinimumAge>${xe(String(p.parentalAge))}</mpeg7:MinimumAge></ParentalGuidance>` : '';
