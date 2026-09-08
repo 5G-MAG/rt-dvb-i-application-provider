@@ -336,7 +336,15 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
   </LanguageList>`;
 
   const serviceBlocks = enabled.map(s => {
-    const logoUri  = s.logoUrl ? `${xe(base)}${xe(s.logoUrl)}` : `${xe(base)}/logos/${xe(s.id)}`;
+    // logoUrl is either absolute (what the editor's "Logo Image URL" field invites) or a path on
+    // this server (what the logo upload stores, e.g. /logos/uploaded/x.png). Only the relative form
+    // is resolved against base: prefixing base onto an absolute URL produced a malformed MediaUri
+    // of the form "http://hosthttp://host/...", which is not a valid xs:anyURI and fails schema
+    // validation, while still looking plausible in the rendered XML.
+    const logoAbs  = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(s.logoUrl || '') || (s.logoUrl || '').startsWith('//');
+    const logoUri  = s.logoUrl
+      ? (logoAbs ? xe(s.logoUrl) : `${xe(base)}${xe(s.logoUrl)}`)
+      : `${xe(base)}/logos/${xe(s.id)}`;
     const logoType = s.logoUrl ? detectMimeType(s.logoUrl) : 'image/svg+xml';
 
     // ServiceInstance blocks — XSD sequence: DisplayName, ContentProtection, ContentAttributes, delivery
