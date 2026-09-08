@@ -606,8 +606,8 @@ ${serviceBlocks}
 }
 
 app.get('/service-list.xml', (req, res) => {
-  // Conditional GET per TS 103 770 V1.2.1 clause 4.3.2.2 (If-Modified-Since headers); A184r2
-  // clause 4.11 covers when a client refreshes the list.
+  // Conditional GET per TS 103 770 V1.2.1 clause 4.3.2.2, If-Modified-Since headers.
+  // A184r2 clause 4.11 covers when a client refreshes the list.
   const ifModSince = req.headers['if-modified-since'];
   if (ifModSince) {
     const d = new Date(ifModSince);
