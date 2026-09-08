@@ -31,6 +31,14 @@ adding or editing a file changes what the selector offers without a restart. Loa
 template twice does not collide: the second copy gets a distinct `id` and `uid`, its instance ids
 follow, and it takes the next free LCN. Nothing is stored until the operator saves and publishes.
 
+**`config.json` is no longer tracked.** It is the live service list, rewritten by the server on
+every publish, so keeping it in version control meant every publish showed as a source change and a
+fresh clone shipped whatever list the last committer happened to have. `config.example.json` is
+tracked instead and is copied into place on first start, so a clean checkout still runs.
+
+**A ContentGuideSource identifier that `xs:ID` forbids is now rejected on write**, with a message
+naming the value and the rule, instead of publishing a list that fails schema validation.
+
 **Editor hint on multi-language names.** The *Multi-language Service Names* section now says that
 its entries replace the Service Name in the published list. They always did: `ServiceName` is built
 from them whenever a service has any, so renaming a service while leaving a stale entry behind

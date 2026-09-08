@@ -8,3 +8,7 @@ test/schemas/
 # Logos uploaded through the editor at runtime. Operator content, written into the tree by
 # the running server, not part of the source.
 public/logos/uploaded/
+
+# The live service list. Operator data, rewritten by the server on every publish; a fresh
+# checkout starts from config.example.json instead.
+config.json

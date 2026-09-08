@@ -31,6 +31,11 @@ const logger = {
 // ── Config ────────────────────────────────────────────────────────────────────
 
 const CONFIG_PATH  = path.join(__dirname, 'config.json');
+// The service list is operator data that this server rewrites on every publish, so config.json is
+// not tracked. A fresh checkout has only the example, which is copied into place on first start:
+// without it the server would have nothing to load and would exit before the operator could use
+// the editor to create one.
+const CONFIG_EXAMPLE = path.join(__dirname, 'config.example.json');
 const LOGOS_DIR    = path.join(__dirname, 'public', 'logos', 'uploaded');
 const HISTORY_DIR  = path.join(__dirname, 'config-history');
 const TEMPLATES_DIR = path.join(__dirname, 'templates');
@@ -80,6 +85,10 @@ function assertValidConfigShape(cfg) {
 
 function loadConfig() {
   let cfg;
+  if (!fs.existsSync(CONFIG_PATH) && fs.existsSync(CONFIG_EXAMPLE)) {
+    fs.copyFileSync(CONFIG_EXAMPLE, CONFIG_PATH);
+    logger.info('No config.json, started from config.example.json', { path: CONFIG_PATH });
+  }
   try { cfg = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')); }
   catch (e) { logger.error('Config read error', { error: String(e.message || e) }); process.exit(1); }
   try { assertValidConfigShape(cfg); }
