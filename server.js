@@ -5,6 +5,7 @@ const fs      = require('fs');
 const multer  = require('multer');
 const dns     = require('dns').promises;
 const net     = require('net');
+const crypto  = require('crypto');
 const http    = require('http');
 const https   = require('https');
 
@@ -149,6 +150,18 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json({ limit: '2mb' }));
+// Uploaded logos are operator-supplied files served from this origin, and SVG is among the image
+// types accepted, so an uploaded SVG carrying a <script> would execute here if a browser navigated
+// to it directly. It cannot when it is only ever an <img> source, which is how the editor and the
+// generated list use it, but nothing stops someone opening the URL. These headers make the file
+// inert whatever it contains: no scripts, no plugins, no same-origin context, and no content-type
+// sniffing. Applied before the static handler so they are set on every response it produces.
+app.use('/logos/uploaded', (req, res, next) => {
+  res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  next();
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ── Admin auth ──────────────────────────────────────────────────────────────
@@ -157,10 +170,20 @@ app.use(express.static(path.join(__dirname, 'public')));
 // deployment reachable beyond a trusted network. Public read routes (/service-list.xml, /epg/*,
 // /logos/:id) are intentionally NOT gated.
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
+// A plain === on a secret returns as soon as two bytes differ, so how long it takes reveals how
+// much of the token was right, one byte at a time. timingSafeEqual always compares the whole
+// buffer. It requires equal lengths, so the length check is done first and separately: token
+// length is not the secret.
+function tokenMatches(given) {
+  const a = Buffer.from(given, 'utf8');
+  const b = Buffer.from(ADMIN_TOKEN, 'utf8');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
 function requireAdmin(req, res, next) {
   if (!ADMIN_TOKEN) return next();
   const m = /^Bearer\s+(.+)$/i.exec(req.get('authorization') || '');
-  if (m && m[1] === ADMIN_TOKEN) return next();
+  if (m && tokenMatches(m[1])) return next();
   return res.status(401).json({ error: 'Unauthorized' });
 }
 

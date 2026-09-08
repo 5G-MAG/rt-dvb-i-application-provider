@@ -4,6 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const libxml = require('libxmljs2');
 const { buildServiceList, buildSchedule, msDur, cgsidProblem } = require('../server.js');
+const crypto = require('node:crypto');
 
 const NS = { d: 'urn:dvb:metadata:servicediscovery:2024', tva: 'urn:tva:metadata:2024' };
 
@@ -129,4 +130,32 @@ test('cgsidProblem: a service id becomes a CGSID only when it has a custom guide
   const withoutCustom = { epg: { id: 'epg' }, services: [{ id: '9bad', customEpgUrl: '' }] };
   assert.equal(cgsidProblem(withoutCustom), null,
     'without a custom guide URL the service id is not used as a CGSID, so xs:ID does not apply');
+});
+
+// An uploaded logo is operator-supplied and SVG is an accepted image type, so a file served from
+// this origin could carry script. These headers make it inert whatever it contains. The file has to
+// exist for the test to mean anything: on a 404 Express's own final handler replaces these headers
+// with its own, which is fine for an error page but is not what is under test here.
+test('uploaded logos are served with headers that neutralise an active SVG', async () => {
+  const fs2 = require('node:fs');
+  const path2 = require('node:path');
+  const { app } = require('../server.js');
+  const dir = path2.join(__dirname, '..', 'public', 'logos', 'uploaded');
+  const file = path2.join(dir, `__test-${process.pid}.svg`);
+  fs2.mkdirSync(dir, { recursive: true });
+  fs2.writeFileSync(file, '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+
+  const server = app.listen(0);
+  await new Promise(r => server.once('listening', r));
+  try {
+    const res = await fetch(`http://127.0.0.1:${server.address().port}/logos/uploaded/${path2.basename(file)}`);
+    assert.equal(res.status, 200, 'the file under test must actually be served');
+    const csp = res.headers.get('content-security-policy') || '';
+    assert.match(csp, /default-src 'none'/, 'no resource of any kind may load');
+    assert.match(csp, /sandbox/, 'no script execution, no same-origin context');
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+  } finally {
+    server.close();
+    fs2.rmSync(file, { force: true });
+  }
 });

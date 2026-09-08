@@ -1,5 +1,21 @@
 # Changelog — rt-dvb-i-application-provider
 
+## 2026-09 (cont.) — Security hardening
+
+- **Uploaded logos cannot execute.** SVG is among the accepted image types, and uploads are served
+  from this origin, so an uploaded SVG carrying a `<script>` would run if a browser navigated to it
+  directly. It never does as an `<img>` source, which is how the editor and the generated list use
+  it, but nothing stopped someone opening the URL. Uploads are now served with
+  `Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; sandbox` and
+  `X-Content-Type-Options: nosniff`, which makes the file inert whatever it contains. This matters
+  most in the default configuration, where `ADMIN_TOKEN` is unset and the upload endpoint is
+  therefore unauthenticated.
+
+- **The admin token is compared in constant time.** A plain `===` returns as soon as two bytes
+  differ, so response timing leaks how much of the token was correct, one byte at a time. The
+  length check is kept separate and first, since the length is not the secret.
+
+
 ## 2026-09 — Templates, EPG and logo URL conformance fixes
 
 **Conformance fixes** (both found by running `npm run test:xsd` with the schema closure supplied
