@@ -40,6 +40,33 @@ fs.mkdirSync(HISTORY_DIR, { recursive: true });
 
 // Minimal shape check so a malformed write (or a corrupted/hand-edited file) fails loudly
 // at load time rather than producing confusing errors deep in the XML generator.
+// ContentGuideSource/@CGSID is typed xs:ID by the DVB-I schema (ContentGuideProviderIdType, a
+// restriction of ID), so it must be an NCName: no leading digit, no colon, no space. A value that
+// is not produces a service list that fails schema validation while looking perfectly reasonable
+// in the editor, and the ContentGuideServiceRef values pointing at it inherit the problem.
+//
+// Rejected on write rather than rewritten: silently correcting an operator's identifier would
+// break every reference to it, and the operator is the one who knows what it should be.
+const NCNAME = /^[A-Za-z_][A-Za-z0-9_.\-]*$/;
+
+function cgsidProblem(cfg) {
+  const ids = [];
+  if (cfg.epg && cfg.epg.id != null) ids.push(['epg.id', String(cfg.epg.id)]);
+  for (const [i, s] of (cfg.services || []).entries()) {
+    // A service with a custom guide URL gets its own ContentGuideSource, whose CGSID is derived
+    // from the service id, so that id has to satisfy the same rule.
+    if (s && s.customEpgUrl && s.id != null) ids.push([`services[${i}].id`, String(s.id)]);
+  }
+  for (const [where, value] of ids) {
+    if (!NCNAME.test(value)) {
+      return `${where} "${value}" cannot be used as a ContentGuideSource identifier: it is typed ` +
+             `xs:ID by the DVB-I schema, so it must start with a letter or underscore and contain ` +
+             `only letters, digits, "_", "." or "-".`;
+    }
+  }
+  return null;
+}
+
 function assertValidConfigShape(cfg) {
   if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) throw new Error('config must be an object');
   if (!Array.isArray(cfg.services)) throw new Error('config.services must be an array');
@@ -92,6 +119,12 @@ function saveHistory(cfg) {
 }
 
 let config    = loadConfig();
+{
+  const problem = cgsidProblem(config);
+  // A warning, not a failure: a list already carrying a bad identifier has to stay loadable, or
+  // there is no way to open the editor and correct it.
+  if (problem) logger.warn('Service list will not validate against the DVB-I schema', { problem });
+}
 // Floored to whole seconds: HTTP-date precision is 1s, so a sub-second lastSaved
 // would never satisfy If-Modified-Since and 304s would never fire right after a save.
 let lastSaved = new Date(Math.floor(Date.now() / 1000) * 1000);
@@ -869,6 +902,8 @@ app.put('/api/config', requireAdmin, rateLimit('mutate', 30, 60000), (req, res) 
     if (!updated || typeof updated !== 'object' || Array.isArray(updated)) return res.status(400).json({ error: 'Invalid body' });
     if (_hasUnsafeKeys(updated)) return res.status(400).json({ error: 'Config contains disallowed keys' });
     if (!Array.isArray(updated.services)) return res.status(400).json({ error: 'Config must have a services array' });
+    const cgsid = cgsidProblem(updated);
+    if (cgsid) return res.status(400).json({ error: cgsid });
     updated.version = (config.version || 0) + 1;
     saveHistory(config); // snapshot previous state
     config = updated;
@@ -1021,4 +1056,4 @@ function startServer() {
 // Only listen when run directly; when required (e.g. by the XSD test) just export the builders.
 if (require.main === module) startServer();
 
-module.exports = { app, startServer, buildServiceList, buildSchedule, msDur };
+module.exports = { app, startServer, buildServiceList, buildSchedule, msDur, cgsidProblem };

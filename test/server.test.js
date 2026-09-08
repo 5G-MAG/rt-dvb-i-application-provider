@@ -3,7 +3,7 @@ process.env.LOG_LEVEL = process.env.LOG_LEVEL || 'error';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const libxml = require('libxmljs2');
-const { buildServiceList, buildSchedule, msDur } = require('../server.js');
+const { buildServiceList, buildSchedule, msDur, cgsidProblem } = require('../server.js');
 
 const NS = { d: 'urn:dvb:metadata:servicediscovery:2024', tva: 'urn:tva:metadata:2024' };
 
@@ -107,4 +107,26 @@ test('buildServiceList: multi-DRM emits one ContentProtection per system', () =>
   ];
   const doc = parse(buildServiceList('http://x', cfg));
   assert.equal(doc.find('//d:ContentProtection', NS).length, 2);
+});
+
+// ContentGuideSource/@CGSID is typed xs:ID by the DVB-I schema, so a value that is not an NCName
+// produces a list that fails validation while looking perfectly reasonable in the editor. This
+// happened with an identifier that began with a digit.
+test('cgsidProblem: accepts an NCName and rejects what xs:ID forbids', () => {
+  const ok = { epg: { id: 'local-live-demo-epg' }, services: [] };
+  assert.equal(cgsidProblem(ok), null);
+
+  for (const bad of ['5g-mag-epg', 'has space', 'has:colon', '', '-leading-hyphen']) {
+    const cfg = { epg: { id: bad }, services: [] };
+    assert.ok(cgsidProblem(cfg), `"${bad}" should be rejected as a CGSID`);
+  }
+});
+
+test('cgsidProblem: a service id becomes a CGSID only when it has a custom guide URL', () => {
+  const withCustom = { epg: { id: 'epg' }, services: [{ id: '9bad', customEpgUrl: 'https://e.example/epg' }] };
+  assert.ok(cgsidProblem(withCustom), 'a custom guide URL derives a CGSID from the service id');
+
+  const withoutCustom = { epg: { id: 'epg' }, services: [{ id: '9bad', customEpgUrl: '' }] };
+  assert.equal(cgsidProblem(withoutCustom), null,
+    'without a custom guide URL the service id is not used as a CGSID, so xs:ID does not apply');
 });
