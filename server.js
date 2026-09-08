@@ -264,7 +264,7 @@ function xe(s) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
-// DRM shorthand → DVB-I UUID URN (§5.5.20)
+// DRM shorthand → DVB-I UUID URN (TS 103 770 §5.5.20)
 const DRM_UUID = {
   widevine:  'urn:uuid:edef8ba9-79d6-4ace-a3c8-27dcd51d21ed',
   playready: 'urn:uuid:9a04f079-9840-4286-ab92-e65be0885f95',
@@ -314,7 +314,11 @@ function buildServiceList(base, cfg, opts = {}) {
   const listId  = cfg.listId || `tag:dvbi.example,2024:servicelist:default`;
   const requestedCountry = (opts.targetCountry || '').toUpperCase().slice(0, 3);
 
-  // Server-side region filtering per §5.6.4.5
+  // Server-side regionalisation, which TS 103 770 §5.6.4.1 makes optional for a Service List
+  // Server: it may tailor the list before providing it to the client using geographic
+  // information. The clause names postcode, receivable multiplex and region identifier as the
+  // information a client may supply; the targetCountry query parameter used here is this
+  // server's own, not one the specification defines.
   let enabled = cfg.services.filter(s => s.enabled !== false);
   if (requestedCountry) {
     enabled = enabled.filter(s => !s.targetRegion || s.targetRegion.toUpperCase().startsWith(requestedCountry));
@@ -369,7 +373,7 @@ ${regions.map(r => {
   }).join('\n')}
   </RegionList>` : '';
 
-  // LanguageList: BCP-47 tags for which metadata is available (§5.5.1)
+  // LanguageList: BCP-47 tags for which metadata is available (TS 103 770 §5.5.1)
   const langSet = new Set([cfg.listLang || 'en']);
   for (const s of enabled) {
     if (s.languages?.length) {
@@ -395,7 +399,7 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
 
     // ServiceInstance blocks — XSD sequence: DisplayName, ContentProtection, ContentAttributes, delivery
     const instanceBlocks = (s.instances || []).map(inst => {
-      // ContentProtection: multiple blocks for multi-DRM (§5.5.20); @encryptionScheme mandatory
+      // ContentProtection: multiple blocks for multi-DRM (TS 103 770 §5.5.20); @encryptionScheme mandatory
       // drmSystems array is the preferred format; fall back to single inst.protection for old data
       const drmEntries = inst.drmSystems?.length
         ? inst.drmSystems
@@ -499,7 +503,7 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
 
     const providerEl = `\n    <ProviderName>${xe(s.provider)}</ProviderName>`;
 
-    // Logo RelatedMaterial — HowRelated and MediaLocator are in TVA namespace (§6.10 / TS 102 822)
+    // Logo RelatedMaterial — HowRelated and MediaLocator are in TVA namespace (TS 103 770 §6.10 / TS 102 822)
     const logoEl = `
     <RelatedMaterial>
       <tva:HowRelated href="urn:dvb:metadata:cs:HowRelatedCS:2021:1001.2"/>
@@ -519,7 +523,7 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
       </tva:MediaLocator>
     </RelatedMaterial>` : '';
 
-    // ServiceGenre with TVA ContentCS URN (§5.5.2 element name + §6.11.5 CS scheme)
+    // ServiceGenre with TVA ContentCS URN (TS 103 770 §5.5.2 element name + TS 103 770 §6.11.5 CS scheme)
     const genreEl = s.genre
       ? `
     <ServiceGenre href="${GENRE_CS[s.genre] || GENRE_CS_DEFAULT}">
@@ -533,11 +537,11 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
     const svcTypeValue = SERVICE_TYPE_CS[s.type] || 'linear';
     const serviceTypeEl = `\n    <ServiceType href="urn:dvb:metadata:cs:ServiceTypeCS:2019:${xe(svcTypeValue)}"/>`;
 
-    // ContentGuideServiceRef at Service level (§5.5.2, not inside ServiceInstance)
+    // ContentGuideServiceRef at Service level (TS 103 770 §5.5.2, not inside ServiceInstance)
     const cgsRef = s.customEpgUrl ? `epg-${s.id}` : cfg.epg.id;
     const cgsRefEl = `\n    <ContentGuideServiceRef>${xe(cgsRef)}</ContentGuideServiceRef>`;
 
-    // ParentalRating (§5.5.28) — service-list element; MinimumAge has no tva: prefix here
+    // ParentalRating (TS 103 770 §5.5.28) — service-list element; MinimumAge has no tva: prefix here
     const pgEl = s.parentalRating != null && s.parentalRating !== '' && s.parentalRating !== null
       ? `
     <ParentalRating>
@@ -654,7 +658,7 @@ function emptyTVAMain(cfg) {
 }
 
 app.get('/epg/schedule', (req, res) => {
-  const serviceId = req.query.sid || req.query.serviceId; // sid is spec-compliant (§6.5.2.2)
+  const serviceId = req.query.sid || req.query.serviceId; // sid is spec-compliant (TS 103 770 §6.5.2.2)
   const svc   = config.services.find(s => s.uid === serviceId);
   const progs = svc?.epgPrograms;
   // A service that exists but carries no programmes is not an error, and must not be answered with
@@ -667,7 +671,7 @@ app.get('/epg/schedule', (req, res) => {
   if (!progs?.length) return res.type('xml').send(emptyTVAMain(config));
   const sched = buildSchedule(progs);
 
-  // Build series CRIDs for GroupInformation/MemberOf (§6.10.17)
+  // Build series CRIDs for GroupInformation/MemberOf (TS 103 770 §6.10.17)
   const seriesCrids = {};
   let _sIdx = 0;
   for (const p of progs) {
@@ -684,7 +688,7 @@ app.get('/epg/schedule', (req, res) => {
         </RelatedMaterial>` : '';
     const pgEl = p.parentalAge != null && p.parentalAge !== ''
       ? `\n        <ParentalGuidance><mpeg7:MinimumAge>${xe(String(p.parentalAge))}</mpeg7:MinimumAge></ParentalGuidance>` : '';
-    // MemberOf replaces flat SeriesNumber/EpisodeNumber/SeriesTitle per §6.10.17
+    // MemberOf replaces flat SeriesNumber/EpisodeNumber/SeriesTitle per TS 103 770 §6.10.17
     let memberOfEl = '';
     if (p.seriesTitle) {
       const key  = `${p.seriesTitle}::${p.seriesNumber || ''}`;
@@ -729,7 +733,7 @@ app.get('/epg/schedule', (req, res) => {
     </GroupInformationTable>` : '';
 
   const catchupEvents = sched.filter(p => p.catchupUrl);
-  // OnDemandProgram full structure per §6.10.8.2
+  // OnDemandProgram full structure per TS 103 770 §6.10.8.2
   const catchupPrograms = catchupEvents.map(p => {
     const startAvail = new Date(p.startMs).toISOString();
     const endAvail   = new Date(p.endMs + 30 * 86400000).toISOString();
@@ -777,7 +781,7 @@ app.get('/epg/schedule', (req, res) => {
 </TVAMain>`);
 });
 
-// ── EPG now/next (§6.5.3) ────────────────────────────────────────────────────
+// ── EPG now/next (TS 103 770 §6.5.3) ────────────────────────────────────────────────────
 
 app.get('/epg/nownext', (req, res) => {
   const serviceId = req.query.sid || req.query.serviceId;
