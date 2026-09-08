@@ -1,15 +1,15 @@
 # DVB-I Application Provider and Admin Portal + Receiver — Deployment & Operations
 
 Two apps:
-- **dvb-i-admin** (this project, "DVB-I Application Provider and Admin Portal"): generates the DVB-I
+- **rt-dvb-i-application-provider** (this project, "DVB-I Application Provider and Admin Portal"): generates the DVB-I
   service list and TV-Anytime EPG; provides the authoring UI.
-- **dvb-i-receiver**: browser player that loads and renders a service list.
+- **rt-dvb-i-application**: browser player that loads and renders a service list.
 
 ## Running
 
 ```
-cd dvb-i-admin && npm install && npm start      # http://localhost:4000
-cd dvb-i-receiver && npm install && npm start    # http://localhost:5000
+cd rt-dvb-i-application-provider && npm install && npm start      # http://localhost:4000
+cd rt-dvb-i-application && npm install && npm start    # http://localhost:5000
 ```
 
 Published service list: `GET /service-list.xml` (public). EPG: `GET /epg/schedule?sid=<uid>`, `GET /epg/nownext?sid=<uid>`.
@@ -90,7 +90,7 @@ and it's also where `ADMIN_TOKEN`-based auth should be paired with network-level
 The receiver loads `hls.js` and `dash.js` from CDNs pinned to exact versions with Subresource Integrity:
 - `hls.js@1.6.16`, `dash.js v5.2.0`
 
-To upgrade a library: change the version in `dvb-i-receiver/public/index.html`, then regenerate the hash:
+To upgrade a library: change the version in `rt-dvb-i-application/public/index.html`, then regenerate the hash:
 ```
 curl -sL <pinned-url> | openssl dgst -sha384 -binary | openssl base64 -A
 ```
@@ -100,8 +100,8 @@ for the remaining inline handlers — see Known limitations in COMPLIANCE.md).
 ## Tests / CI
 
 ```
-cd dvb-i-admin    && npm test   # unit tests; XSD conformance runs only if you supply test/schemas/ yourself
-cd dvb-i-receiver && npm test   # unit tests + Playwright E2E (real Chromium)
+cd rt-dvb-i-application-provider    && npm test   # unit tests; XSD conformance runs only if you supply test/schemas/ yourself
+cd rt-dvb-i-application && npm test   # unit tests + Playwright E2E (real Chromium)
 ```
 Both projects have a `.github/workflows/test.yml` that runs the full suite on every push/PR
 (the receiver's workflow additionally installs Chromium: `npx playwright install --with-deps chromium`).

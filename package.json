@@ -1,5 +1,5 @@
 {
-  "name": "dvb-i-admin",
+  "name": "rt-dvb-i-application-provider",
   "version": "1.0.0",
   "description": "DVB-I Application Provider and Admin Portal — service list manager and authoring UI",
   "main": "server.js",
