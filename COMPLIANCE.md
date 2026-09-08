@@ -97,8 +97,23 @@ redistributed here — see CHANGELOG.md for context.
 
 ## Classification-scheme terms
 
-CS `@href` values are typed `anyURI` by the schema, so XSD validation does not check CS membership.
-The emitted terms were separately verified against the DVB/TVA CS registries and corrected where wrong:
+CS `@href` values are typed `anyURI` by the schema, so XSD validation cannot check CS membership: a
+schema-valid document can still name a term that does not exist. `npm run test:cs`
+(`test/cs-validate.js`) closes part of that gap by checking every emitted term against the scheme
+files themselves, which ship in the same electronic attachment archive as the schemas.
+
+As of 2026-09-08, against those files: **13 terms checked across the sample list, the live config,
+both templates and both EPG endpoints, all present in their schemes.**
+
+**25 references are reported unchecked, not valid.** They cite TV-Anytime's own schemes
+(`ContentCS:2011`, `SubtitleCarriageCS:2023`, `SubtitleCodingFormatCS:2023`,
+`SubtitlePurposeCS:2023`, and TVA's `HowRelatedCS:2012`), which are published with
+ETSI TS 102 822-3-1 rather than in the TS 103 770 archive. That is the larger half, and it covers
+`ContentCS`, where one of the three historical CS defects was. Closing it needs that document's
+own attachment; until then those terms rest on the one-off manual check recorded below.
+
+The emitted terms were originally verified by hand against the DVB/TVA CS registries and corrected
+where wrong:
 
 - `ServiceTypeCS:2019` — `linear`, `linear-radio`, `ondemand` (was the non-existent `nonlinear`).
 - `ContentCS:2011` — hierarchical termIDs, e.g. `3.1.1` News, `3.2` Sports, `3.4` Fiction/Drama,

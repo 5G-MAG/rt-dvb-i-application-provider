@@ -1,14 +1,15 @@
 {
   "name": "rt-dvb-i-application-provider",
   "version": "1.0.0",
-  "description": "DVB-I Application Provider and Admin Portal — service list manager and authoring UI",
+  "description": "DVB-I Application Provider and Admin Portal \u2014 service list manager and authoring UI",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "test": "npm run test:unit && npm run test:xsd",
+    "test": "npm run test:unit && npm run test:xsd && npm run test:cs",
     "test:unit": "node --test test/server.test.js",
-    "test:xsd": "node test/xsd-validate.js"
+    "test:xsd": "node test/xsd-validate.js",
+    "test:cs": "node test/cs-validate.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
