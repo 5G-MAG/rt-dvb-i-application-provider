@@ -7,8 +7,9 @@ piece of DVB signalling, and on very little else. That is the finding, and it is
 than the reference document suggests.
 
 **The gap list everyone cites is three years out of date.** ETSI TR 103 972, the deployment
-guidelines for DVB-I over 5G, lists fourteen gaps. Checked against the newest issue of every
-document it names:
+guidelines for DVB-I over 5G, lists fourteen gaps in its two gap clauses, five for 5G Broadcast and
+nine for 5G Media Streaming. Each was checked against the newest published issue of the document
+that owns it, not against every document the report cites:
 
 | | Count |
 |---|---|
@@ -24,9 +25,11 @@ three of them in a 3GPP document that did not exist in its current form when the
 list has nowhere to put a 5G locator, whether for 5G Broadcast or for 5GMS access information. Two
 are xMB provisioning details that would matter to an operator but block nothing.
 
-**The asymmetry is the real story.** Every 3GPP-derived document involved has advanced one or two
-releases since the report. Not one of the three DVB documents has been reissued at all. What is
-holding this up is a service list extension: small, well understood, and squarely in DVB's court.
+**The asymmetry is the real story.** The 3GPP-derived documents have moved through two or three
+releases since the versions the report assessed, and that is where six of the seven closures happened.
+The DVB side has moved once: TS 103 770 was reissued in 2024-09, which closed one gap, and it did not
+add any way to signal 5G delivery. What is holding this up is a service list extension: small, well
+understood, and squarely in DVB's court.
 
 **What is already specified is more than most people expect.** TS 103 770 clause 9.3 covers carriage
 of DVB-I in an MBMS system normatively, including the service class identifiers, and it puts the
@@ -98,9 +101,11 @@ element that would carry the locator is not. TR 103 972 clause 6.2.4 says an ext
 that a service instance can refer to a 5G Broadcast or MBMS URL with delivery parameters of its own,
 and notes it could be defined either in TS 103 770 or in an MBMS or 5G Broadcast specification.
 
-Checked directly: neither TS 103 770 V1.2.1 nor the A177r8 draft of V1.3.1 contains the strings
-"5G Broadcast", "5GMS" or "ServiceAccessInformation" anywhere. This gap is open in the published
-standard and remains open in its draft successor.
+Checked directly, and by fragments rather than whole strings so that a phrase broken across a line
+or a table column could not hide: neither TS 103 770 V1.2.1 nor the A177r8 draft of V1.3.1 contains
+"5GMS", "ServiceAccess", "AccessInformation" or "Media Streaming" anywhere. Neither cites TS 103 720,
+TS 26.501 or TS 26.512 either, so the omission is not a matter of wording. This gap is open in the
+published standard and remains open in its draft successor.
 
 **Nothing carries 5G Media Streaming access information.** TR 103 972 clause 6.3.4 identifies that
 service instance metadata needs to convey baseline 5GMS Service Access Information, suggesting a new
@@ -120,15 +125,19 @@ TR 103 972 was published in 2023-07 and assessed 5G Media Streaming against **Re
 current specification is Release 18, and the client APIs have since been restructured into a
 separate document. Most of its 5GMS gaps are closed.
 
-Checked 2026-09-09 against the newest published issue of each document: ETSI TS 103 770 V1.2.1
+Checked 2026-09-09 and reviewed again 2026-09-12, against the newest published issue of each
+document: ETSI TS 103 770 V1.2.1
 (2024-09), DVB A177r8 (draft V1.3.1), ETSI TS 103 720 V1.2.1 (2023-06), ETSI TS 129 116 V19.0.0
 (2025-10), ETSI TS 126 512 V19.3.0 (2026-08) and ETSI TS 126 510 V19.2.0 (2026-08). Every gap in the
 report is accounted for.
 
-The DVB side has published nothing newer. TS 103 770 V1.2.1, TS 103 720 V1.2.1 and the report itself
-are each still the latest issue of their document; no V1.3.1 or V1.4.1 of any of them exists on the
-ETSI deliverable server. The 3GPP-derived documents have all moved on by one or two releases since
-the versions the report assessed.
+Each of these is the latest published issue: no V1.3.1 or V1.4.1 of any of the three DVB documents
+exists on the ETSI deliverable server, and no newer release of the three 3GPP-derived ones.
+
+Their histories since the report differ sharply. TS 103 770 was reissued once, as V1.2.1 in 2024-09,
+more than a year after the report, and that issue closed one gap. TS 103 720 and the report itself
+have not been reissued since. The 3GPP-derived documents have moved through two or three releases:
+the report assessed 5G Media Streaming against Release 16 and the current issue is Release 19.
 
 ### 5G Broadcast scenario, TR clause 6.2.4
 
@@ -171,7 +180,8 @@ issue published a year after the report.
 (clauses 5.5.18.1 to 5.5.18.8) plus the `OtherDeliveryParameters` extension point, none of them
 MBMS. Clause 9.3.3 nonetheless describes what a client does with "a service instance with an
 mbms:// locator", the only occurrence of that scheme in the document. Neither V1.2.1 nor A177r8
-contains the string "5G Broadcast", "5GMS" or "ServiceAccessInformation" anywhere.
+mentions 5G Media Streaming in any spelling, nor cites the 5G Broadcast or 5G Media Streaming
+specifications at all.
 
 ### 5G Media Streaming scenario, TR clause 6.3.4
 
@@ -239,9 +249,25 @@ published, five more have closed since, and three of those closed in a document 
 in its current form when the report was written. A gap list is a snapshot, and this one is three
 years old.
 
-The asymmetry is the other half of that observation. Every 3GPP-derived document here has advanced
-one or two releases since the report; not one of the three DVB documents has been reissued at all.
-The gaps that remain open are, with two exceptions, on the side that has not moved.
+The asymmetry is the other half of that observation. The 3GPP-derived documents have advanced two or
+three releases since the versions the report assessed, and six of the seven closures are theirs. The
+DVB side has been reissued once in that time, closing the seventh, without adding any means of
+signalling 5G delivery. The gaps that remain open are, with two exceptions, on the slower side.
+
+### How these findings were checked
+
+Each status rests on reading the clause in the document that owns it, not on the report's
+description of it. Absence is the hard case, and two traps were hit and corrected while doing this:
+
+- A phrase can wrap across lines in an extracted PDF, so a whole-string search finds nothing where
+  the text is present. This nearly produced a claim that two properties had been deleted from
+  TS 129 116 when they had not.
+- A phrase can also be split across table columns, where joining lines does not repair it either.
+  The service class identifiers in TS 103 770 table 106 are split exactly that way.
+
+Absence claims here are therefore made on short fragments that survive both, and corroborated by a
+second signal: a specification that never cites another specification is not merely wording around
+it. Anyone re-checking this work should use the same method rather than a plain search.
 
 ## What these repositories already provide
 
