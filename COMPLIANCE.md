@@ -158,6 +158,13 @@ where wrong:
   it unchanged, deliberately: silently rewriting an operator's identifier would break the
   `ContentGuideServiceRef` values pointing at it. `npm run test:xsd` catches it when schemas are
   supplied.
+- **Two moderate dependency advisories remain open, and cannot be closed without a breaking
+  upgrade.** Express 4.22.2 pins `qs` to `~6.15.1`; the advisories are fixed in `qs` 6.16.0, which
+  that range excludes, and 4.22.2 is the last release of the 4.x line. Only Express 5 resolves it.
+  Both affect query string parsing, which this server does reach, so the exposure is real rather
+  than theoretical. `npm audit` reports them on every run; they are left rather than forced,
+  because `npm audit fix --force` would move a major version under a test suite that has not been
+  run against it.
 - **XSD validation is not part of CI** (as of 2026-07-01) — the schema files are not bundled (see
   above), so CI only runs the unit tests. `npm run test:xsd` remains available for local use if you
   supply your own copy of the schemas.
