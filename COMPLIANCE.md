@@ -119,6 +119,36 @@ gaps are still open, and what is already specified: see `DVB-I-OVER-5G.md` besid
 short, seven of the fourteen are closed and the ones that block work here are all the same missing
 service list extension.
 
+### The local 5G delivery extension is an extension, not conformance
+
+`schemas/dvbi-5g-ext-1.0.xsd` defines two types in the 5G-MAG namespace
+`urn:5g-mag:metadata:dvbi-5g:2026`: `MBMSDeliveryParametersType`, for a service instance delivered
+over MBMS, and `MBMSOfferingType`, for a Service List Registry offering that says the same about a
+whole list. **Neither is defined by DVB, and nothing here claims otherwise.** They exist because
+TS 103 770 V1.2.1 specifies eight delivery parameter types (clauses 5.5.18.1 to 5.5.18.8), none of
+them MBMS, while its clause 9.3.3 already describes what a client does with an MBMS locator.
+
+They use the extension point the specification provides, `OtherDeliveryParameters` typed
+`dvbi-types:ExtensionBaseType`, which is the same mechanism annex G.2.2 uses for HLS. A receiver
+that does not know the namespace finds no delivery parameters it understands on that instance and
+moves on, which is the intended behaviour.
+
+Where it is made visible, so that nobody mistakes it for specified behaviour:
+
+| Where | How |
+|---|---|
+| Service list | an inline XML comment on the element, and the namespace declared only in documents that use it |
+| Receiver | a dashed "5G ext" badge naming the extension, and a playback message saying the delivery rests on a local extension |
+| Registry response | the same inline comment, the namespace declared only when used |
+| Registry dashboard | its own Extensions column, outlined rather than filled, never merged into Delivery |
+| Conformance checks | any document carrying the namespace is reported NOT CHECKED unless `DVBI_5G_EXT_SCHEMA` supplies the extension schema, so it can never be counted as conformance to the published one |
+
+It is not a `Delivery` value for registry queries: TS 103 770 V1.2.1 clause 5.3.6.1, table 12b is a
+closed set, and an unlisted value has to be refused with a 400.
+
+When DVB specifies a delivery type for MBMS, that becomes the conformant signalling and this is
+withdrawn.
+
 ## Classification-scheme terms
 
 CS `@href` values are typed `anyURI` by the schema, so XSD validation cannot check CS membership: a

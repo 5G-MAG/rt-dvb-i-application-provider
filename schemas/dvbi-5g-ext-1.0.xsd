@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A LOCAL EXTENSION. Not part of any DVB or 3GPP specification.
+
+  ETSI TS 103 770 V1.2.1 defines eight delivery parameter types (clauses 5.5.18.1 to 5.5.18.8) and
+  none of them is MBMS, yet its clause 9.3.3 describes what a client does with "a service instance
+  with an mbms:// locator". The behaviour is specified while the element carrying the locator is
+  not, which ETSI TR 103 972 clause 6.2.4 records as an open gap.
+
+  This schema fills that gap locally so the delivery can be demonstrated, using the extension point
+  the specification provides: OtherDeliveryParameters, typed dvbi-types:ExtensionBaseType, carrying
+  an xsi:type from another namespace. That is the same mechanism DVB itself uses for HLS in annex
+  G.2.2, and the arrangement TR 103 972 clause 6.4.3.3 points at, which prefers a distinct instance
+  type over signalling 5G Broadcast as ordinary DASH delivery.
+
+  The namespace is deliberately a 5G-MAG one, not a dvb.org one, so that a document carrying this
+  identifies itself as using a local extension wherever it is read. When DVB specifies a delivery
+  type for this, that becomes the conformant signalling and this is withdrawn.
+-->
+<schema xmlns="http://www.w3.org/2001/XMLSchema"
+        xmlns:dvbi-types="urn:dvb:metadata:servicediscovery-types:2023"
+        xmlns:dvbi5g="urn:5g-mag:metadata:dvbi-5g:2026"
+        targetNamespace="urn:5g-mag:metadata:dvbi-5g:2026"
+        elementFormDefault="qualified" attributeFormDefault="unqualified">
+  <import namespace="urn:dvb:metadata:servicediscovery-types:2023" schemaLocation="./dvbi_types_v1.0.xsd"/>
+
+  <!-- Delivery of a service instance over an MBMS system, whether 5G Broadcast (ETSI TS 103 720)
+       or 5MBS. The locator is the mbms:// URL of the MBMS User Service carrying the media, which
+       is what TS 103 770 clause 9.3.3 expects a client to hand to its MBMS Client. -->
+  <complexType name="MBMSDeliveryParametersType">
+    <complexContent>
+      <extension base="dvbi-types:ExtensionBaseType">
+        <sequence>
+          <element name="ServiceLocator" type="anyURI"/>
+          <!-- The MBMS User Service class, as TS 103 770 clause 9.3.1 table 106 defines for
+               carrying a DVB-I service instance. Stated so a receiver can check it rather than
+               assume it. -->
+          <element name="ServiceClass" type="anyURI" minOccurs="0"/>
+          <!-- Where the same content is also reachable by unicast, so a receiver without an MBMS
+               client, or out of coverage, has somewhere to fall back to. -->
+          <element name="UnicastFallback" type="anyURI" minOccurs="0"/>
+        </sequence>
+      </extension>
+    </complexContent>
+  </complexType>
+
+  <!-- The same extension point appears in DeliveryType (TS 103 770 V1.2.1 clause 5.3.6.1), which a
+       Service List Registry uses to say how the lists it offers are delivered. There is nothing to
+       locate at that level: an offering names a service list, and the locators sit inside it. So
+       this type adds no content and exists only to make the offering's use of MBMS visible, and to
+       give ExtensionBaseType, which is abstract, a concrete type to instantiate. -->
+  <complexType name="MBMSOfferingType">
+    <complexContent>
+      <extension base="dvbi-types:ExtensionBaseType"/>
+    </complexContent>
+  </complexType>
+</schema>

@@ -174,6 +174,13 @@
     .badge-hls  { background: rgba(48,209,88,0.15);  color: #34c759; }
     .badge-dash { background: rgba(10,132,255,0.15); color: #64d2ff; }
     .badge-multicast { background: rgba(191,90,242,0.15); color: #da8fff; }
+    /* A local, non-DVB extension. Outlined rather than filled so it never reads as one of the
+       delivery types the specification defines. */
+    .badge-mbms { background: transparent; color: #ffb340; border: 1px dashed rgba(255,159,10,0.6); }
+    .ext-warn { background: rgba(255,159,10,0.08); border: 1px dashed rgba(255,159,10,0.5);
+                border-radius: 6px; padding: 0.5rem 0.6rem; margin-bottom: 0.6rem;
+                font-size: 0.78rem; line-height: 1.45; color: var(--text-2); }
+    .ext-warn code { font-size: 0.74rem; }
     .svc-actions { display: flex; gap: 0.4rem; flex-shrink: 0; }
 
     /* ── Modal ── */
@@ -821,7 +828,7 @@ function renderServices() {
   el.innerHTML = config.services.map((s, i) => {
     const disabled   = s.enabled === false;
     const instBadges = (s.instances || []).map(inst =>
-      `<span class="badge badge-${esc(inst.type)}">${esc(inst.type.toUpperCase())} ·${esc(String(inst.priority))}</span>`
+      `<span class="badge badge-${esc(inst.type)}"${inst.type==='mbms' ? ' title="Local 5G/MBMS extension, not defined by DVB"' : ''}>${esc(inst.type==='mbms' ? '5G EXT' : inst.type.toUpperCase())} ·${esc(String(inst.priority))}</span>`
     ).join(' ');
     const logoStyle = `background:${esc(s.logoBg || '#2c3e50')}${disabled ? ';opacity:0.5' : ''}`;
     const logoContent = s.logoUrl
@@ -1166,6 +1173,7 @@ function redrawInstances() {
             <option value="hls"       ${inst.type==='hls'       ?'selected':''}>HLS</option>
             <option value="dash"      ${inst.type==='dash'      ?'selected':''}>DASH</option>
             <option value="multicast" ${inst.type==='multicast' ?'selected':''}>Multicast</option>
+            <option value="mbms"      ${inst.type==='mbms'      ?'selected':''}>5G / MBMS (extension)</option>
           </select>
         </div>
         <div class="field" style="max-width:70px">
@@ -1178,9 +1186,27 @@ function redrawInstances() {
         </div>
         <button class="inst-del" onclick="removeInst(${i})" title="Remove instance">✕</button>
       </div>
+      ${inst.type==='mbms' ? `
+      <div class="ext-warn">
+        <strong>Local extension, not DVB-specified.</strong> No delivery parameter type in
+        ETSI TS 103 770 V1.2.1 carries MBMS, so this instance is emitted as
+        <code>OtherDeliveryParameters</code> with an <code>xsi:type</code> from the 5G-MAG namespace
+        <code>urn:5g-mag:metadata:dvbi-5g:2026</code>. Receivers that do not know it skip the
+        instance. See <code>schemas/dvbi-5g-ext-1.0.xsd</code> and COMPLIANCE.md.
+      </div>
+      <div class="inst-row">
+        <div class="field">
+          <label>MBMS service class</label>
+          <input type="text" value="${esc(inst.serviceClass||'')}" placeholder="urn:dvb:metadata:serviceClass:DVB-I_Service_Instance:1" oninput="instChange(${i},'serviceClass',this.value)" style="font-family:monospace;font-size:0.78rem"/>
+        </div>
+        <div class="field">
+          <label>Unicast fallback URL</label>
+          <input type="url" value="${esc(inst.unicastFallback||'')}" placeholder="https://… (optional)" oninput="instChange(${i},'unicastFallback',this.value)" style="font-family:monospace;font-size:0.78rem"/>
+        </div>
+      </div>` : ''}
       <div class="inst-row" style="align-items:flex-end">
         <div class="field">
-          <label>${inst.type==='multicast' ? 'Multicast URL (udp://…)' : 'Stream URL'}</label>
+          <label>${inst.type==='multicast' ? 'Multicast URL (udp://…)' : inst.type==='mbms' ? 'MBMS service locator (mbms://…)' : 'Stream URL'}</label>
           <input type="url" value="${esc(inst.url||'')}" placeholder="https://…" oninput="instChange(${i},'url',this.value)" style="font-family:monospace;font-size:0.78rem"/>
         </div>
         <button class="btn btn-ghost btn-xs" style="flex-shrink:0;margin-bottom:1px" onclick="testInstURL(${i})">Test</button>

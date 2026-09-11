@@ -298,6 +298,13 @@ const DRM_UUID = {
 // Linked application HowRelated. TS 103 770 V1.2.1 clause 5.2.3.1 requires the RelatedMaterial
 // to carry a HowRelated whose @href comes from urn:dvb:metadata:cs:LinkedApplicationCS:2019.
 // 1.1 = broadcast-related app (media in parallel); use 1.2 for an app controlling media presentation.
+// A LOCAL EXTENSION, not part of any specification. TS 103 770 defines no delivery parameters type
+// for MBMS (clauses 5.5.18.1 to 5.5.18.8) while its clause 9.3.3 describes a service instance with
+// an mbms:// locator, which TR 103 972 clause 6.2.4 records as an open gap. This namespace is a
+// 5G-MAG one rather than a dvb.org one precisely so that a list carrying it says so.
+const NS_DVBI_5G = 'urn:5g-mag:metadata:dvbi-5g:2026';
+const DVBI_5G_EXTENSION_NAME = 'urn:5g-mag:dvbi-5g:mbms';
+
 const LINKED_APP_HREF = 'urn:dvb:metadata:cs:LinkedApplicationCS:2019:1.1';
 
 // Genre short name → display label
@@ -490,6 +497,23 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
     </ServiceInstance>`;
       }
 
+      // 5G Broadcast or 5MBS delivery, through the extension point rather than as a DASH instance:
+      // TR 103 972 clause 6.4.3.3 discourages presenting it as DASH, because existing clients may
+      // assume DASH means unicast. A client that does not know this extension ignores the instance
+      // and uses another, which is the behaviour that makes a hybrid service degrade gracefully.
+      if (inst.type === 'mbms') {
+        const cls = inst.serviceClass || 'urn:dvb:metadata:serviceClass:DVB-I_Service_Instance:1';
+        const fallback = inst.unicastFallback
+          ? `\n          <dvbi5g:UnicastFallback>${xe(inst.unicastFallback)}</dvbi5g:UnicastFallback>` : '';
+        return `${head}
+      <!-- Local extension, not DVB-specified: see schemas/dvbi-5g-ext-1.0.xsd and COMPLIANCE.md -->
+      <OtherDeliveryParameters extensionName="${DVBI_5G_EXTENSION_NAME}" xsi:type="dvbi5g:MBMSDeliveryParametersType">
+        <dvbi5g:ServiceLocator>${xe(inst.url)}</dvbi5g:ServiceLocator>
+        <dvbi5g:ServiceClass>${xe(cls)}</dvbi5g:ServiceClass>${fallback}
+      </OtherDeliveryParameters>
+    </ServiceInstance>`;
+      }
+
       if (inst.type === 'multicast') {
         // Parse udp://address:port into MulticastTSDeliveryParameters/IPMulticastAddress (McastType:
         // attributes are Address/Port, capital-initial per BasicMulticastAddressAttributesType).
@@ -585,6 +609,13 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
   </Service>`;
   }).join('');
 
+  // The extension namespace is declared only when a service actually carries an MBMS instance.
+  // Declaring it unconditionally makes every list look like it uses a local extension, which is
+  // untrue of most of them and defeats conformance checking, since a checker cannot tell a list
+  // that merely declares the namespace from one that uses it.
+  const uses5g = enabled.some(s => (s.instances || []).some(i => i.type === 'mbms'));
+  const ext5gNs = uses5g ? `\n  xmlns:dvbi5g="${NS_DVBI_5G}"` : '';
+
   // Per-service ContentGuideSources for services with a custom EPG URL
   const perSvcCGS = enabled
     .filter(s => s.customEpgUrl)
@@ -602,7 +633,7 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xmlns:hls="vnd:apple:mpegurl"
   xmlns:tva="urn:tva:metadata:2024"
-  xmlns:dvbisd-t="urn:dvb:metadata:servicediscovery-types:2023"
+  xmlns:dvbisd-t="urn:dvb:metadata:servicediscovery-types:2023"${ext5gNs}
   id="${xe(listId)}"
   version="${xe(version)}" xml:lang="${xe(cfg.listLang || 'en')}">
 
