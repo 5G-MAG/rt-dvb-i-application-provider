@@ -112,6 +112,13 @@ TVA). That fix is in `server.js` and the receiver/importer parsers and does not 
 files being present. The schema files themselves were removed from this repository and are not
 redistributed here — see CHANGELOG.md for context.
 
+## Delivery over 5G
+
+What it would take to carry these services over a 5G system, which of ETSI TR 103 972's fourteen
+gaps are still open, and what is already specified: see `DVB-I-OVER-5G.md` beside this file. In
+short, seven of the fourteen are closed and the ones that block work here are all the same missing
+service list extension.
+
 ## Classification-scheme terms
 
 CS `@href` values are typed `anyURI` by the schema, so XSD validation cannot check CS membership: a
