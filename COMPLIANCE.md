@@ -152,12 +152,10 @@ where wrong:
 
 ## Known limitations / not done
 
-- **`@CGSID` is not validated on entry.** It is typed `xs:ID` by the schema
-  (`ContentGuideProviderIdType`), so a value beginning with a digit, or containing a space or a
-  colon, produces a list that fails XSD validation. The editor accepts it and the generator emits
-  it unchanged, deliberately: silently rewriting an operator's identifier would break the
-  `ContentGuideServiceRef` values pointing at it. `npm run test:xsd` catches it when schemas are
-  supplied.
+- **An existing `@CGSID` that `xs:ID` forbids is not migrated.** A write that would introduce one
+  is now rejected with a message naming the value and the rule, but a list that already carries a
+  bad identifier still loads, with a warning at startup. It is not rewritten silently, because
+  every `ContentGuideServiceRef` pointing at it would break; correcting it is the operator's call.
 - **Two moderate dependency advisories remain open, and cannot be closed without a breaking
   upgrade.** Express 4.22.2 pins `qs` to `~6.15.1`; the advisories are fixed in `qs` 6.16.0, which
   that range excludes, and 4.22.2 is the last release of the 4.x line. Only Express 5 resolves it.
@@ -165,11 +163,11 @@ where wrong:
   than theoretical. `npm audit` reports them on every run; they are left rather than forced,
   because `npm audit fix --force` would move a major version under a test suite that has not been
   run against it.
-- **XSD validation is not part of CI** (as of 2026-07-01) — the schema files are not bundled (see
-  above), so CI only runs the unit tests. `npm run test:xsd` remains available for local use if you
-  supply your own copy of the schemas.
-- **Automated CS-membership checking is not in CI** either — only XSD validation (when schemas are
-  supplied) covers that. CS terms were verified once, by hand, against the registry.
+- **Neither conformance check runs in CI.** `npm run test:xsd` and `npm run test:cs` both need
+  files this project does not carry and may not redistribute, so CI runs the unit tests and those
+  two skip with exit 0. Closing this would mean CI fetching the specifications at run time on every
+  push, which is a decision about somebody else's servers rather than a code change. Both run
+  locally against `DVBI_SCHEMAS`.
 - **FairPlay DRM** is signalled but cannot fully work under this schema version: the license/certificate
   attributes (`DRMSystemId/@LAURL`, `@certificateURL`) exist only from DVB-I **v8.0**; the generator
   targets v6.0 (`servicediscovery:2024`). The receiver surfaces a clear error instead of failing
@@ -178,7 +176,9 @@ where wrong:
   inline event handlers. Dropping it requires migrating all handlers to `addEventListener`. The E2E
   suite (below) already caught and fixed one real CSP defect (Google Fonts blocked); it would catch
   further regressions in whatever resource paths the test's page load exercises, but not a full audit.
-- **In-browser E2E**: `rt-dvb-i-application/test/e2e.test.js` runs a real headless Chromium (Playwright) —
+- **In-browser E2E**: `rt-dvb-i-application/test/e2e.test.js` runs a real headless browser
+  (Playwright), Chromium by default and any engine via `BROWSER`; some environments cannot run
+  Chromium at all and need `BROWSER=firefox` —
   loads the app, fetches a compliant fixture list, and verifies channel rendering/selection. This is a
   smoke test, not full coverage: dash.js/hls.js playback (DVR window, track selection, DRM) is not
   exercised because it needs real media segments, which the fixture's placeholder URLs don't provide.
