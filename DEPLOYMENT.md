@@ -45,6 +45,16 @@ Mutating routes (`PUT /api/config`, logo upload/delete, history restore) and the
 routes (`/api/test-url`, `/api/fetch-xml`) are rate-limited per client IP (in-memory, single-process —
 a multi-instance deployment behind a load balancer would need a shared store, e.g. Redis).
 
+## Environment variables
+
+| Variable | Default | What it does |
+|---|---|---|
+| `PORT` | `4000` | port to listen on |
+| `ADMIN_TOKEN` | unset | when set, `/api/*` requires `Authorization: Bearer <token>`. **Unset means the admin API, including logo upload, is open to anyone who can reach the server.** |
+| `LOG_LEVEL` | `info` | `error`, `warn`, `info`, `debug` |
+| `HTTPS_KEY_PATH`, `HTTPS_CERT_PATH` | unset | serve HTTPS directly instead of behind a proxy |
+| `DVBI_SCHEMAS` | `test/schemas` | directory holding the XSD and classification scheme files, for `npm run test:xsd` and `npm run test:cs`. Keep it outside the working tree. Without it both checks skip and exit 0. |
+
 ## Logging
 
 Structured JSON-lines logs to stdout/stderr (one object per line: `time`, `level`, `msg`, plus fields).
