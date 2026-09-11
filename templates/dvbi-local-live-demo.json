@@ -196,13 +196,100 @@
         ]
       },
       {
+        "id": "mwc-tv-3",
+        "uid": "tag:5g-mag.org,2026:service:mwc-tv-3",
+        "version": 1,
+        "enabled": true,
+        "name": "5G-MAG.tv 3",
+        "provider": "5G-MAG",
+        "lcn": 3,
+        "type": "linear",
+        "genre": "entertainment",
+        "parentalRating": 0,
+        "logoLetters": "TV3",
+        "logoBg": "#6d4aa7",
+        "logoUrl": "/logos/uploaded/mwc-tv-3.png",
+        "languages": [
+          {
+            "lang": "en",
+            "name": "5G-MAG.tv 3"
+          },
+          {
+            "lang": "fr",
+            "name": "5G-MAG.tv 3"
+          },
+          {
+            "lang": "it",
+            "name": "5G-MAG.tv 3"
+          }
+        ],
+        "targetRegion": "",
+        "subscriptionPackage": "",
+        "customEpgUrl": "",
+        "availableFrom": null,
+        "availableTo": null,
+        "linkedApp": null,
+        "instances": [
+          {
+            "id": "inst-mwc-tv-3-dash",
+            "label": "5G-MAG.tv 3 (live DASH)",
+            "priority": 1,
+            "hasAudioDescription": true,
+            "hasHardOfHearing": false,
+            "subtitleCarriage": 3,
+            "subtitleLanguage": "en",
+            "drmSystems": [],
+            "url": "http://127.0.0.1:3004/tv_3_live/manifest.mpd",
+            "type": "dash"
+          }
+        ],
+        "epgPrograms": [
+          {
+            "title": "Open Source Hour",
+            "dur": 60,
+            "desc": "The reference implementations behind the demos, one repository at a time, and what it takes to run them.",
+            "genre": "factual",
+            "parentalAge": 0,
+            "image": "http://localhost:4000/logos/uploaded/mwc-tv-3.png",
+            "seriesTitle": "Open Source Hour",
+            "seriesNumber": 1,
+            "episodeNumber": 5,
+            "catchupUrl": null
+          },
+          {
+            "title": "Spectrum and Coverage",
+            "dur": 30,
+            "desc": "Why a broadcast bearer reaches where unicast does not, and what that costs in planning.",
+            "genre": "documentary",
+            "parentalAge": 0,
+            "image": "http://localhost:4000/logos/uploaded/mwc-tv-3.png",
+            "seriesTitle": null,
+            "seriesNumber": null,
+            "episodeNumber": null,
+            "catchupUrl": null
+          },
+          {
+            "title": "Workshop Replay",
+            "dur": 90,
+            "desc": "The long version of the stand demonstration, recorded end to end with nothing cut.",
+            "genre": "entertainment",
+            "parentalAge": 0,
+            "image": "http://localhost:4000/logos/uploaded/mwc-tv-3.png",
+            "seriesTitle": null,
+            "seriesNumber": null,
+            "episodeNumber": null,
+            "catchupUrl": null
+          }
+        ]
+      },
+      {
         "id": "mwc-radio",
         "uid": "tag:5g-mag.org,2026:service:mwc-radio",
         "version": 1,
         "enabled": true,
         "name": "5G-MAG.radio",
         "provider": "5G-MAG",
-        "lcn": 3,
+        "lcn": 4,
         "type": "radio",
         "genre": "music",
         "parentalRating": 0,
