@@ -83,9 +83,11 @@ an MBMS-Aware Application which invokes an MBMS Client: it starts the service an
 acquires the service list from an MBMS user service of the right class when it has no unicast
 connection, and subscribes to notifications so it picks up new versions of those documents.
 
-That is the same split as `rt-mbs-client` (the MBS client, holding the announcement channel and the
-reception) and `rt-mbs-application` (the MBS-aware application driving it over a local API). A
-DVB-I receiver would occupy the second role.
+That is the same split as `rt-mbms-client` (the MBMS Client, holding the announcement channel and
+the reception) and `rt-mbms-application` (the MBMS-aware application driving it over a local API). A
+DVB-I receiver would occupy the second role. `rt-mbs-*`, note, is a different system: it implements
+5G MBS User Services of 3GPP TS 26.502, which clause 9.3 does not mention in any spelling. The
+procedure below is the MBMS one, and `rt-mbms-*` is the stack it lands on.
 
 ## What is still missing
 
@@ -275,10 +277,151 @@ it. Anyone re-checking this work should use the same method rather than a plain 
 |---|---|---|
 | Service list generation with an extension point | `rt-dvb-i-application-provider` | `OtherDeliveryParameters` with an `xsi:type` is already how HLS is signalled here, following TS 103 770 annex G.2.2. The same mechanism is what a 5G Broadcast instance would use. |
 | A receiver that already handles unplayable instance types | `rt-dvb-i-application` | It parses DVB-T/S/C instances and lists those services with a badge rather than dropping them, which is the behaviour an unsupported 5G instance needs. |
-| An MBS client and an MBS-aware application | `rt-mbs-client`, `rt-mbs-application` | Exactly the two roles clause 9.3.3 describes, with a local API between them. |
-| Service announcement and object delivery | `rt-mbs-function`, `rt-mbs-transport-function` | The provisioning and transport side, already carrying DASH presentations over FLUTE. |
+| An MBMS Client and an MBMS-aware application | `rt-mbms-client`, `rt-mbms-application` | The two roles clause 9.3.3 describes, with a local API between them. `rt-mbs-*` is 5G MBS User Services (3GPP TS 26.502), a different system that clause 9.3 does not mention. |
+| A BM-SC with an xMB-C interface | `rt-mbms-bmsc` | The provisioning side: where a service class is set on a service resource. |
+| Object delivery over FLUTE | `rt-mbms-gw`, `rt-mbms-tx`, `rt-libflute` | The transport that carries the documents and segments. |
 
 The pieces are unusually well matched. What is missing is the signalling that joins them.
+
+## How carriage over MBMS should work
+
+Everything in this section except the service list signalling is already specified. It is set out in
+the order the documents put it, so that anyone building it knows which clause to open and which
+piece has no clause at all.
+
+### The unit of carriage is an MBMS User Service, and its class says what it carries
+
+A DVB-I deployment over MBMS is not one bearer, it is a set of MBMS User Services, each announced
+separately and each labelled with a service class. ETSI TS 103 770 V1.2.1, clause 9.3.1:
+
+> "When conveying a DVB-I service instance or DVB-I metadata in an MBMS System this attribute shall
+> be present and shall indicate the appropriate service class identifier specified in table 106."
+
+Table 106 gives three, and a working deployment uses at least two of them:
+
+| Service class identifier | The user service carries |
+|---|---|
+| `urn:dvb:metadata:serviceClass:DVB-I_Service_List:1` | one service list document |
+| `urn:dvb:metadata:serviceClass:DVB-I_Content_Guide:1` | content guide documents |
+| `urn:dvb:metadata:serviceClass:DVB-I_Service_Instance:1` | the media assets of one service instance |
+
+So the service list, the content guide and each service's media travel as separate user services
+with separate class labels. A receiver picks them apart by class, which is the whole point of the
+attribute.
+
+### Provisioning: how a document reaches a bearer
+
+The content provider talks to the BM-SC over xMB, creates a service resource and sets its class.
+ETSI TS 129 116 V19.0.0, clause 5.2.1.1, table 5.2.1.1-1, row `service-class`:
+
+> "The service class that service belongs to. (see serviceClass element in clause 11.2.1.2 of
+> 3GPP TS 26.346 [3])."
+
+That property is what ends up in the User Service Description the receiver eventually reads. 3GPP
+TS 26.346 V19.3.0, clause 11.2.1.2:
+
+> "The serviceClass attribute is optional and contains the service class identifier for the
+> delivered service according to the syntax defined in clause E.1.2 of [90]."
+
+Optional there, mandatory here: DVB narrows it, which is what clause 9.3.1 above does.
+
+For the media of a service instance, the User Service Description must also point at the entry
+point document the player will be given. 3GPP TS 26.346 V19.3.0, clause 5.2.2.1:
+
+> "In the event a MBMS User Service carries DASH-formatted contents, the userServiceDescription
+> element, representative of the User Service, shall contain a mediaPresentationDescription element
+> and/or a r12:appService element."
+
+The user services are then announced. 3GPP TS 26.346 V19.3.0, clause 5.2.3.1 lists four ways a
+client can obtain the announcement session parameters, of which pre-storing them in the receiver and
+resolving a well-known FQDN are the two that need no other channel. For LTE-based 5G Broadcast this
+is narrowed further. ETSI TS 103 720 V1.2.1, clause 5.4.2:
+
+> "LTE-based 5G Broadcast requires the usage and support of 5G Broadcast SA Services for service
+> announcements."
+
+### Receiver procedure, in the order clause 9.3.3 gives it
+
+**1. Start the announcement channel.** ETSI TS 103 770 V1.2.1, clause 9.3.3:
+
+> "The DVB-I client (acting as an MBMS-Aware Application) shall first invoke the MBMS Client to
+> start receiving the MBMS Service Announcement Channel, as specified in clause 5.2.3 of ETSI
+> TS 126 346 [39]."
+
+The result is a User Service Description for every user service in the system, most of which have
+nothing to do with DVB-I.
+
+**2. Read the class off each one.** ETSI TS 103 770 V1.2.1, clause 9.3.2:
+
+> "The service class identifier shall be exposed by the MBMS Client to the DVB-I client (acting as
+> an MBMS-Aware Application) as specified in clause 6.2 of ETSI TS 126 347 [40]."
+
+This is the filter. Without it the receiver cannot tell a DVB-I service list from any other file
+being broadcast.
+
+**3. Acquire the metadata, and keep it current.** ETSI TS 103 770 V1.2.1, clause 9.3.3:
+
+> "If it has no unicast network connection, the DVB-I client (acting as an MBMS-Aware Application)
+> shall attempt to acquire a DVB-I service list from an MBMS User Service of the appropriate service
+> class, and may subsequently also attempt to obtain DVB-I Content Guide metadata from an MBMS User
+> Service of the appropriate service class."
+
+Note the condition: this path is for a receiver with no unicast connection. A receiver that has one
+may fetch the list over HTTP as usual, which is what the demo in these repositories does. The same
+clause then requires the receiver to subscribe to MBMS Client notifications and pick up new versions
+as they are announced, which is the broadcast equivalent of the version polling a unicast receiver
+does under clause 4.3.3.7.
+
+**4. Select an instance and hand off to the player.** ETSI TS 103 770 V1.2.1, clause 9.3.3:
+
+> "When a DVB-I service instance with an mbms:// locator is selected by the user, the DVB-I client
+> (acting as an MBMS-Aware Application) shall invoke the MBMS Client to initiate reception of the
+> corresponding MBMS User Service."
+
+The player is never given the `mbms://` locator. The same clause requires the entry point document
+referenced by the User Service Description, an MPD in the DASH case, to be passed to the media
+player instead. In practice an MBMS Client reconstructs the received objects and republishes them
+over local HTTP, so what the player sees is an ordinary MPD URL.
+
+### The one piece with no clause
+
+Step 4 begins "a DVB-I service instance with an mbms:// locator", and nothing in TS 103 770 says
+which element carries that locator. That is gap 5 above, and it is the only thing in this whole
+procedure that a deployment has to invent. This repository invents it as
+`schemas/dvbi-5g-ext-1.0.xsd`, in a 5G-MAG namespace and marked as an extension everywhere it
+appears; see COMPLIANCE.md. It carries the locator, the service class from table 106 so a receiver
+can check rather than assume, and a unicast fallback URL.
+
+Choosing the class in the service list matters: it is what lets a receiver match an instance against
+the announced user services without opening each one.
+
+### What each component would have to do
+
+| Component | What it does here |
+|---|---|
+| `rt-dvb-i-application-provider` | Emits the service list, including the extension. Already done. |
+| `rt-mbms-bmsc` | Accepts a service over xMB-C with `service-class` set to the table 106 value, and puts it in the User Service Description. |
+| `rt-mbms-gw`, `rt-mbms-tx` | Carry the service list document, the content guide documents and the media segments as file objects. |
+| `rt-mbms-client` | Holds the announcement channel, reconstructs objects, and must expose the service class of each user service, which clause 9.3.2 requires and which it does not do today: `GET /client-api/service_announcement` returns the parsed announcement items with no class on them. |
+| `rt-dvb-i-application` | Acts as the MBMS-aware application: ask the client for user services of class `DVB-I_Service_List:1`, load the list from the reconstructed copy, and on selecting an extension instance ask the client to start reception and then play the MPD it republishes. |
+
+The smallest useful step is not step 4. It is publishing the service list itself as a user service of
+class `DVB-I_Service_List:1` and having the receiver load it from the MBMS Client's local HTTP copy:
+that exercises provisioning, the class label, the announcement channel and object delivery, and it
+needs no extension at all, because a service list carried this way still describes ordinary unicast
+instances.
+
+### What this section does not establish
+
+- ETSI TS 126 347 is not held here. Clause 9.3.2's reference to its clause 6.2, and anything about
+  how the `mbms://` scheme is formed or how an MBMS-aware application calls an MBMS Client, are
+  `unverified: could not obtain ETSI TS 126 347`.
+- The service class syntax comes from OMA BCAST Service Guide V1.1 clause E.1.2, which is not held
+  here either. The three values DVB defines are given verbatim in table 106, so nothing above
+  depends on that syntax.
+- Nothing here has been built or run. The statement about `rt-mbms-client` not exposing a service
+  class is code-derived, from its README and a search of its sources; everything else is
+  source-derived.
 
 ## What would need building
 
