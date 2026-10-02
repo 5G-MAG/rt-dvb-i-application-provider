@@ -409,6 +409,48 @@
     </div>
   </div>
 
+  <!-- Catch-up player: the application each programme's XML AIT launches (TS 103 770 §5.2.4.3, table 52) -->
+  <div class="card">
+    <div class="card-title">Catch-up Player (XML AIT)</div>
+    <div style="font-size:0.78rem;color:var(--text-3);margin-bottom:0.6rem">
+      A programme with a catch-up URL is offered on demand through an XML AIT that launches this player
+      at <code>URL Base</code> + <code>Location</code>, with the catch-up URL in the named parameter.
+      Every field is your player's own; none is filled in for you. Leave them all empty if no programme
+      has a catch-up URL. An HbbTV player needs AUTOSTART, VISIBLE_ALL, service bound false and a URL base
+      ending in "/" (ETSI TS 102 796 table 7).
+    </div>
+    <div class="form-row">
+      <div class="field"><label>Domain Name</label><input id="cup-domainName" type="text" placeholder="player.example.com"/></div>
+      <div class="field"><label>Application Name</label><input id="cup-appName" type="text"/></div>
+      <div class="field" style="max-width:120px"><label>Name Language <span style="font-weight:400;text-transform:none">(ISO 639-2)</span></label><input id="cup-appNameLang" type="text" maxlength="3" placeholder="eng"/></div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label>Organisation ID <span style="font-weight:400;text-transform:none">(registered with DVB)</span></label><input id="cup-orgId" type="text" inputmode="numeric"/></div>
+      <div class="field"><label>Application ID</label><input id="cup-appId" type="text" inputmode="numeric"/></div>
+      <div class="field"><label>Application Type</label>
+        <select id="cup-type"><option value=""></option><option>application/vnd.hbbtv.xhtml+xml</option><option>text/html</option><option>application/xhtml+xml</option></select></div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label>Control Code</label>
+        <select id="cup-controlCode"><option value=""></option><option>AUTOSTART</option><option>PRESENT</option><option>DESTROY</option><option>KILL</option><option>PREFETCH</option><option>REMOTE</option><option>DISABLED</option><option>PLAYBACK_AUTOSTART</option></select></div>
+      <div class="field"><label>Visibility <span style="font-weight:400;text-transform:none">(optional)</span></label>
+        <select id="cup-visibility"><option value=""></option><option>VISIBLE_ALL</option><option>NOT_VISIBLE_ALL</option><option value="NOT_VISIBLE_USERS ">NOT_VISIBLE_USERS</option></select></div>
+      <div class="field"><label>Service Bound <span style="font-weight:400;text-transform:none">(optional)</span></label>
+        <select id="cup-serviceBound"><option value=""></option><option>false</option><option>true</option></select></div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label>Priority <span style="font-weight:400;text-transform:none">(hex)</span></label><input id="cup-priority" type="text" maxlength="2"/></div>
+      <div class="field"><label>Version <span style="font-weight:400;text-transform:none">(2 hex digits)</span></label><input id="cup-version" type="text" maxlength="2"/></div>
+      <div class="field"><label>Platform Profile <span style="font-weight:400;text-transform:none">(hex, TS 102 796 table 5)</span></label><input id="cup-profile" type="text" maxlength="4"/></div>
+      <div class="field"><label>Platform Version <span style="font-weight:400;text-transform:none">(major.minor.micro)</span></label><input id="cup-platformVersion" type="text" placeholder="1.8.1"/></div>
+    </div>
+    <div class="form-row">
+      <div class="field"><label>URL Base</label><input id="cup-urlBase" type="url" placeholder="https://player.example.com/" style="font-family:monospace;font-size:0.82rem"/></div>
+      <div class="field"><label>Location <span style="font-weight:400;text-transform:none">(relative to URL base)</span></label><input id="cup-location" type="text" style="font-family:monospace;font-size:0.82rem"/></div>
+      <div class="field"><label>Catch-up URL Parameter</label><input id="cup-contentParameter" type="text" style="font-family:monospace;font-size:0.82rem"/></div>
+    </div>
+  </div>
+
   <!-- Services -->
   <div class="section-head">
     <div class="section-head-title">Services</div>
@@ -806,6 +848,29 @@ function populateSettings() {
   document.getElementById('cfg-listLang').value    = config.listLang      || 'en';
   document.getElementById('cfg-targetCountry').value = config.targetCountry || '';
   document.getElementById('cfg-listId').value      = config.listId        || '';
+  const cup = config.catchupPlayer || {};
+  for (const k of CATCHUP_FIELDS) document.getElementById(`cup-${k}`).value = cup[k] == null ? '' : String(cup[k]);
+  document.getElementById('cup-platformVersion').value = ['versionMajor', 'versionMinor', 'versionMicro']
+    .every(k => cup[k] != null && cup[k] !== '') ? `${cup.versionMajor}.${cup.versionMinor}.${cup.versionMicro}` : '';
+}
+
+// The catch-up player as entered. Nothing is defaulted: an empty field is left out, and the server
+// refuses to publish a player that the XML AIT cannot carry (TS 103 770 clause 5.2.4).
+const CATCHUP_FIELDS = ['domainName', 'appName', 'appNameLang', 'orgId', 'appId', 'type', 'controlCode', 'visibility',
+  'serviceBound', 'priority', 'version', 'profile', 'urlBase', 'location', 'contentParameter'];
+function readCatchupPlayer() {
+  const p = {};
+  for (const k of CATCHUP_FIELDS) {
+    const raw = document.getElementById(`cup-${k}`).value;
+    const v = k === 'visibility' ? raw : raw.trim();
+    if (v !== '') p[k] = v;
+  }
+  const ver = document.getElementById('cup-platformVersion').value.trim();
+  if (ver) [p.versionMajor, p.versionMinor, p.versionMicro] = ver.split('.');
+  if (!Object.keys(p).length) return null;
+  for (const k of ['orgId', 'appId']) if (/^\d+$/.test(p[k] || '')) p[k] = Number(p[k]);
+  if (p.serviceBound === 'true' || p.serviceBound === 'false') p.serviceBound = p.serviceBound === 'true';
+  return p;
 }
 
 function readSettings() {
@@ -818,6 +883,8 @@ function readSettings() {
     id:           document.getElementById('cfg-epgId').value.trim(),
     providerName: document.getElementById('cfg-epgProvider').value.trim(),
   };
+  const cup = readCatchupPlayer();
+  if (cup) config.catchupPlayer = cup; else delete config.catchupPlayer;
 }
 
 // ── Services list ─────────────────────────────────────────────────────────────

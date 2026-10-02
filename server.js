@@ -218,9 +218,163 @@ function guideProblem(cfg) {
   return null;
 }
 
+// ── Catch-up player: the content deep-linked XML AIT ─────────────────────────
+//
+// TS 103 770 V1.2.1 clause 6.10.8.2, table 52, row ProgramURL: "A URL location of a content
+// deep-linked XML AIT for the on-demand programme. The XML AIT shall be used to launch the on-demand
+// player." and "The @contentType attribute of the element shall carry the value
+// application/vnd.dvb.ait+xml." The player is the operator's application, so every value the XML
+// AIT says about it is taken from cfg.catchupPlayer as entered; none is defaulted here. The checks
+// below refuse only what a clause or the XML AIT schema (mis_xmlait.xsd) does not allow.
+const AIT_MEDIA_TYPE = 'application/vnd.dvb.ait+xml';
+// Clause 5.2.4.1: "XML AIT files shall also signal one of the following MIME type values to
+// represent each application type within the mhp:ApplicationDescription.mhp:type.mhp:OtherApp element"
+const HBBTV_APP_TYPE = 'application/vnd.hbbtv.xhtml+xml';
+const AIT_APP_TYPES = [HBBTV_APP_TYPE, 'text/html', 'application/xhtml+xml'];
+// mis_xmlait.xsd enumerations ApplicationControlCode and VisibilityDescriptor. The trailing space
+// in "NOT_VISIBLE_USERS " is in the schema (and in ETSI TS 102 809 V1.3.1 clause 5.4.4.5).
+const AIT_CONTROL_CODES = ['AUTOSTART', 'PRESENT', 'DESTROY', 'KILL', 'PREFETCH', 'REMOTE', 'DISABLED', 'PLAYBACK_AUTOSTART'];
+const AIT_VISIBILITY = ['NOT_VISIBLE_ALL', 'NOT_VISIBLE_USERS ', 'VISIBLE_ALL'];
+// Clause 5.2.4.4.6: the client appends "regionID[]" and "lloc"; clause 5.2.4.3: "the Content
+// Provider shall ensure that any included query parameters are distinct from the contextual
+// parameters specified in clause 5.2.4.4.6."
+const AIT_CONTEXT_PARAMS = ['regionID[]', 'lloc'];
+// Clause 5.2.4.2: "The platform profile value shall be specified in the child elements of the
+// mhp:mhpVersion element. This shall be as defined in clause 7.2.3.1, table 5 of ETSI TS 102 796 [21]."
+// Reference [21] is undated, so its latest issue applies: ETSI TS 102 796 V1.8.1 (2026-09). Table 5,
+// row "5.2.5 Platform profiles": the basic profile is 0x0000, and 0x0001 (A/V content download)
+// and 0x0002 (PVR) "can be combined"; terminals "shall launch applications signalled with the
+// following values for major, minor and micro", the versions listed here.
+const AIT_PROFILES = [0x0000, 0x0001, 0x0002, 0x0003];
+const AIT_PLATFORM_VERSIONS = ['1.1.1', '1.2.1', '1.3.1', '1.4.1', '1.5.1', '1.6.1', '1.7.1', '1.8.1'];
+// ETSI TS 102 809 V1.3.1 clause 5.2.3.1: organisation_id "Values of zero shall not be encoded" and
+// "the most significant 8 bits of the organisation_id shall be zero"; table 1 gives application_id
+// 0x0001 to 0x9fff to unsigned, signed and privileged applications, reserves 0xa000 to 0xfffd, and
+// 0xfffe and 0xffff "shall not be used to identify an application".
+const AIT_ORG_ID_MAX = 0xffffff;
+const AIT_APP_ID_MAX = 0x9fff;
+// ETSI TS 102 796 V1.8.1 clause 7.2.3.2, table 7 note 2: "Content Providers shall ensure the length
+// of the concatenation of URLBase and applicationLocation is 2 048 characters or less."
+const HBBTV_LAUNCH_URL_MAX = 2048;
+
+const isHex = (v, n) => typeof v === 'string' && new RegExp(`^[0-9a-fA-F]{1,${n}}$`).test(v);
+const queryNames = loc => { try { return [...new URL(loc, 'http://h/').searchParams.keys()]; } catch (_) { return null; } };
+
+// Why the configured catch-up player cannot be written as an XML AIT, or null when it can.
+function catchupPlayerProblem(p) {
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return 'the catch-up player must be an object.';
+  const hbbtv = p.type === HBBTV_APP_TYPE;
+  const id = v => (typeof v === 'number' || (typeof v === 'string' && /^\d+$/.test(v))) ? Number(v) : NaN;
+  if (typeof p.domainName !== 'string' || !/^\S*\.\S*$/.test(p.domainName)) {
+    return 'domainName (ApplicationDiscovery@DomainName) is required and must be a domain name containing a "." (mis_xmlait.xsd, OfferingBase).';
+  }
+  if (typeof p.appName !== 'string' || !p.appName.trim()) return 'appName is required (mis_xmlait.xsd, Application/appName).';
+  if (typeof p.appNameLang !== 'string' || !/^[a-z]{3}$/.test(p.appNameLang)) {
+    return 'appNameLang must be a three-letter ISO 639-2 code such as "eng" (mis_xmlait.xsd, appName@Language).';
+  }
+  const orgId = id(p.orgId), appId = id(p.appId);
+  if (!(orgId >= 1 && orgId <= AIT_ORG_ID_MAX)) {
+    return 'orgId must be the organisation_id registered with DVB, from 1 to 16777215 (ETSI TS 102 809 clause 5.2.3.1).';
+  }
+  if (!(appId >= 1 && appId <= AIT_APP_ID_MAX)) {
+    return 'appId must be from 1 to 40959 (0x9fff): 0 shall not be used, 0xa000 to 0xfffd are reserved and 0xfffe and 0xffff are wildcards (ETSI TS 102 809 clause 5.2.3.1, table 1).';
+  }
+  if (!AIT_APP_TYPES.includes(p.type)) {
+    return `type must be one of ${AIT_APP_TYPES.join(', ')} (TS 103 770 clause 5.2.4.1).`;
+  }
+  if (!AIT_CONTROL_CODES.includes(p.controlCode)) return `controlCode must be one of ${AIT_CONTROL_CODES.join(', ')} (mis_xmlait.xsd).`;
+  if (p.visibility != null && !AIT_VISIBILITY.includes(p.visibility)) return 'visibility is not a VisibilityDescriptor value (mis_xmlait.xsd).';
+  if (p.serviceBound != null && typeof p.serviceBound !== 'boolean') return 'serviceBound must be true or false.';
+  if (hbbtv) {
+    // ETSI TS 102 796 V1.8.1 clause 7.2.3.2, table 7, column "Requirement on XML AIT file".
+    if (p.controlCode !== 'AUTOSTART') return 'an HbbTV application\'s controlCode "Shall be AUTOSTART." (ETSI TS 102 796 clause 7.2.3.2, table 7).';
+    if (p.visibility !== 'VISIBLE_ALL') return 'an HbbTV application\'s visibility "Shall be VISIBLE_ALL." (ETSI TS 102 796 clause 7.2.3.2, table 7).';
+    if (p.serviceBound !== false) return 'an HbbTV application\'s serviceBound "Shall be false." (ETSI TS 102 796 clause 7.2.3.2, table 7).';
+  }
+  if (!isHex(p.priority, 2)) return 'priority must be one or two hexadecimal digits (mis_xmlait.xsd, Hexadecimal8bit).';
+  if (typeof p.version !== 'string' || !/^[0-9a-fA-F]{2}$/.test(p.version)) {
+    return 'version must be two hexadecimal digits, for example 01 (mis_xmlait.xsd, ipi:Version).';
+  }
+  if (!isHex(p.profile, 4) || !['versionMajor', 'versionMinor', 'versionMicro'].every(k => isHex(p[k], 2))) {
+    return 'profile, versionMajor, versionMinor and versionMicro are required, in hexadecimal (TS 103 770 clause 5.2.4.2, mis_xmlait.xsd MhpVersion).';
+  }
+  if (!AIT_PROFILES.includes(parseInt(p.profile, 16))) {
+    return 'profile must be 0 (basic), 1, 2 or 3: the profiles ETSI TS 102 796 clause 7.2.3.1, table 5 defines (TS 103 770 clause 5.2.4.2).';
+  }
+  const ver = ['versionMajor', 'versionMinor', 'versionMicro'].map(k => parseInt(p[k], 16)).join('.');
+  if (!AIT_PLATFORM_VERSIONS.includes(ver)) {
+    return `platform version ${ver} is not one ETSI TS 102 796 clause 7.2.3.1, table 5 lists (${AIT_PLATFORM_VERSIONS.join(', ')}); ` +
+           'the client "shall ignore applications listed with other values" (TS 103 770 clause 5.2.4.2).';
+  }
+  let base;
+  try { base = new URL(p.urlBase); } catch (_) { base = null; }
+  if (!base || (base.protocol !== 'https:' && base.protocol !== 'http:') || typeof p.urlBase !== 'string') {
+    return 'urlBase must be an absolute http or https URL (mis_xmlait.xsd, HTTPTransportType/URLBase).';
+  }
+  if (hbbtv && !p.urlBase.endsWith('/')) {
+    return 'an HbbTV application\'s URLBase "shall be a URL ending with a slash" (ETSI TS 102 796 clause 7.2.3.2, table 7).';
+  }
+  if (p.location != null && typeof p.location !== 'string') return 'location must be text.';
+  const loc = p.location || '';
+  const names = queryNames(loc);
+  if (/\s|#/.test(loc) || !names) return 'location must be a relative URL without spaces or a fragment.';
+  if (typeof p.contentParameter !== 'string' || !p.contentParameter.trim()) {
+    return 'contentParameter is required: the name of the query parameter that gives the player the programme\'s catch-up URL.';
+  }
+  for (const n of [...names, p.contentParameter]) {
+    if (AIT_CONTEXT_PARAMS.includes(n)) {
+      return `the query parameter "${n}" is a contextual parameter the client appends; the Content Provider "shall ensure that any ` +
+             'included query parameters are distinct from the contextual parameters" (TS 103 770 clause 5.2.4.3).';
+    }
+  }
+  return null;
+}
+
+// applicationLocation of the deep link: the configured location with the programme's catch-up URL
+// as the configured query parameter. Clause 5.2.4.3: "Within the XML AIT the concatenation of
+// URLBase and applicationLocation shall form a URL specifying an application launch location that
+// allows launching of a player application directly."
+function aitLocation(p, catchupUrl) {
+  const loc = p.location || '';
+  const sep = !loc.includes('?') ? '?' : (loc.endsWith('?') || loc.endsWith('&') ? '' : '&');
+  return `${loc}${sep}${encodeURIComponent(p.contentParameter)}=${encodeURIComponent(catchupUrl)}`;
+}
+
+// Why programme ev cannot be offered on demand, or null when it can.
+function deepLinkProblem(cfg, ev) {
+  if (!ev.catchupUrl) return 'it has no catch-up URL.';
+  if (cfg.catchupPlayer == null) return 'no catch-up player is configured, so there is no XML AIT for ProgramURL (TS 103 770 clause 6.10.8.2, table 52).';
+  const pp = catchupPlayerProblem(cfg.catchupPlayer);
+  if (pp) return `catchupPlayer: ${pp}`;
+  const p = cfg.catchupPlayer;
+  if (p.type === HBBTV_APP_TYPE && [...(p.urlBase + aitLocation(p, ev.catchupUrl))].length > HBBTV_LAUNCH_URL_MAX) {
+    return 'URLBase and applicationLocation together are longer than 2 048 characters (ETSI TS 102 796 clause 7.2.3.2, table 7, note 2).';
+  }
+  return null;
+}
+
+// Refused on save: a catch-up URL is a claim that the programme is on demand, which needs an
+// OnDemandProgram (clause 6.5.4.1: "Where a ScheduleEvent in the ProgramLocation table is also
+// available as an on-demand item then an OnDemandProgram element shall also be returned"), whose
+// ProgramURL is mandatory and has to be the XML AIT (table 52).
+function catchupProblem(cfg) {
+  if (cfg.catchupPlayer != null) {
+    const pp = catchupPlayerProblem(cfg.catchupPlayer);
+    if (pp) return `catchupPlayer: ${pp}`;
+  }
+  for (const [i, s] of (cfg.services || []).entries()) {
+    for (const [j, ev] of ((s && s.epgPrograms) || []).entries()) {
+      if (!ev || !ev.catchupUrl) continue;
+      const why = deepLinkProblem(cfg, ev);
+      if (why) return `services[${i}].epgPrograms[${j}] has a catch-up URL, but ${why}`;
+    }
+  }
+  return null;
+}
+
 function publishProblem(cfg) {
   return uidProblem(cfg) || priorityProblem(cfg) || languagesProblem(cfg) || countryProblem(cfg) ||
-         guideProblem(cfg);
+         guideProblem(cfg) || catchupProblem(cfg);
 }
 
 // Clause 5.2.8.2.1, table 8: the permissible image_variant values. "The list of image_variant
@@ -1044,19 +1198,28 @@ function scheduleEvent(svc, ev, nowMs) {
       </ScheduleEvent>`;
 }
 
-// OnDemandProgram for an event with a catch-up URL (table 52). @serviceIDRef is the identifier the
-// request used. Table 62: two availability Genre terms, from MediaAvailabilityCS (table 70) and
+// URL of the content deep-linked XML AIT of one programme, served by /ait/program.aitx.
+const aitUrl = (base, svc, ev) => `${base}/ait/program.aitx?pid=${encodeURIComponent(eventCrid(svc, ev))}`;
+
+// Whether an event is written as on demand: it has a catch-up URL and the configured catch-up
+// player gives it an XML AIT. A list loaded from disk is not checked on load, so one without a
+// usable player gets no OnDemandProgram rather than a ProgramURL that is not an XML AIT.
+const onDemand = (cfg, ev) => !!ev.catchupUrl && !deepLinkProblem(cfg, ev);
+
+// OnDemandProgram for an event offered on demand (table 52). @serviceIDRef is the identifier the
+// request used. ProgramURL is the programme's content deep-linked XML AIT (clause 5.2.4.3). Table 62:
+// two availability Genre terms, from MediaAvailabilityCS (table 70) and
 // FEPGAvailabilityCS (table 71), "The default values shall be media_unavailable and fepg_unavailable."
 // Media is available between StartOfAvailability and EndOfAvailability; nothing here says an
 // on-demand item is offered in the forwards EPG, so that one stays at its default.
-function onDemandProgram(svc, ev, serviceIDRef, nowMs) {
+function onDemandProgram(svc, ev, serviceIDRef, nowMs, base) {
   const startAvail = ev.startMs;
   const endAvail   = ev.endMs + 30 * 86400000;
   const media = nowMs >= startAvail && nowMs < endAvail ? 'media_available' : 'media_unavailable';
   return `
       <OnDemandProgram serviceIDRef="${xe(serviceIDRef)}">
         <Program crid="${xe(eventCrid(svc, ev))}"/>
-        <ProgramURL>${xe(ev.catchupUrl)}</ProgramURL>
+        <ProgramURL contentType="${AIT_MEDIA_TYPE}">${xe(aitUrl(base, svc, ev))}</ProgramURL>
         <InstanceDescription>
           <Genre type="other" href="urn:fvc:metadata:cs:MediaAvailabilityCS:2014-07:${media}"/>
           <Genre type="other" href="urn:fvc:metadata:cs:FEPGAvailabilityCS:2014-10:fepg_unavailable"/>
@@ -1089,7 +1252,7 @@ function scheduleWindow(query, nowMs) {
 const NOW_NEXT = 'crid://dvb.org/metadata/schedules/now-next';
 const NOW_NEXT_MAX = 10;
 
-function nowNextResponse(cfg, svc, sid, kind, nowMs, imageVariant) {
+function nowNextResponse(cfg, svc, sid, kind, nowMs, imageVariant, base) {
   const maxDur = Math.max(...svc.epgPrograms.map(p => Number(p.dur) * 60000).filter(d => d > 0));
   const span = (NOW_NEXT_MAX + 1) * maxDur;
   const evs = buildSchedule(svc.epgPrograms, nowMs - span, nowMs + span);
@@ -1113,7 +1276,7 @@ function nowNextResponse(cfg, svc, sid, kind, nowMs, imageVariant) {
       <GroupType xsi:type="ProgramGroupTypeType" value="otherCollection"/>
       <BasicDescription/>
     </GroupInformation>`).join('');
-  const ondemand = inOrder.filter(x => x.ev.catchupUrl).map(x => onDemandProgram(svc, x.ev, sid, nowMs)).join('');
+  const ondemand = inOrder.filter(x => onDemand(cfg, x.ev)).map(x => onDemandProgram(svc, x.ev, sid, nowMs, base)).join('');
   return tvaMain(cfg, `
     <ProgramInformationTable>${progInfo}
     </ProgramInformationTable>
@@ -1125,7 +1288,7 @@ function nowNextResponse(cfg, svc, sid, kind, nowMs, imageVariant) {
     </ProgramLocationTable>`);
 }
 
-function timestampResponse(cfg, svc, sid, win, nowMs, imageVariant) {
+function timestampResponse(cfg, svc, sid, win, nowMs, imageVariant, base) {
   // Clause 6.5.2.1: only events with PublishedStartTime at or after start and before end.
   const evs = buildSchedule(svc.epgPrograms, win.fromMs, win.toMs).filter(e => e.startMs >= win.fromMs);
   if (!evs.length) return null;
@@ -1149,7 +1312,7 @@ function timestampResponse(cfg, svc, sid, win, nowMs, imageVariant) {
   const groupInfoTableEl = groupInfoItems ? `
     <GroupInformationTable>${groupInfoItems}
     </GroupInformationTable>` : '';
-  const ondemand = evs.filter(ev => ev.catchupUrl).map(ev => onDemandProgram(svc, ev, sid, nowMs)).join('');
+  const ondemand = evs.filter(ev => onDemand(cfg, ev)).map(ev => onDemandProgram(svc, ev, sid, nowMs, base)).join('');
   return tvaMain(cfg, `
     <ProgramInformationTable>${progInfo}
     </ProgramInformationTable>${groupInfoTableEl}
@@ -1161,7 +1324,7 @@ function timestampResponse(cfg, svc, sid, win, nowMs, imageVariant) {
 
 // ScheduleInfoEndpoint (clauses 6.5.2 and 6.5.3). sid is the service's UniqueIdentifier: the list
 // carries no ContentGuideServiceRef, so that is the identifier clients query with.
-function scheduleDocument(cfg, query, nowMs, nowNextDefault = null) {
+function scheduleDocument(cfg, query, nowMs, base, nowNextDefault = null) {
   const sid = query.sid || query.serviceId;
   const imageVariant = query.image_variant || null;
   const kind = query.now_next || nowNextDefault;
@@ -1176,14 +1339,14 @@ function scheduleDocument(cfg, query, nowMs, nowNextDefault = null) {
   // element here, which the attached TV-Anytime schema rejects (ScheduleEvent is required), so the
   // response stays the empty document.
   const body = svc.epgPrograms?.length
-    ? (nowNext ? nowNextResponse(cfg, svc, sid, kind, nowMs, imageVariant)
-               : timestampResponse(cfg, svc, sid, win, nowMs, imageVariant))
+    ? (nowNext ? nowNextResponse(cfg, svc, sid, kind, nowMs, imageVariant, base)
+               : timestampResponse(cfg, svc, sid, win, nowMs, imageVariant, base))
     : null;
   return { status: 200, xml: body || emptyTVAMain(cfg) };
 }
 
 app.get('/epg/schedule', (req, res) => {
-  const { status, xml } = scheduleDocument(config, req.query, Date.now());
+  const { status, xml } = scheduleDocument(config, req.query, Date.now(), publicBase(req));
   res.status(status).type('xml').send(xml);
 });
 
@@ -1192,7 +1355,7 @@ app.get('/epg/schedule', (req, res) => {
 // Not an endpoint the service list signals: now/next is a request to the ScheduleInfoEndpoint
 // (clause 6.5.3.1). Kept for direct callers, answered as now_next=true by default.
 app.get('/epg/nownext', (req, res) => {
-  const { status, xml } = scheduleDocument(config, req.query, Date.now(), 'true');
+  const { status, xml } = scheduleDocument(config, req.query, Date.now(), publicBase(req), 'true');
   res.status(status).type('xml').send(xml);
 });
 
@@ -1201,12 +1364,12 @@ app.get('/epg/nownext', (req, res) => {
 // ProgramInfoEndpoint: one programme by its CRID. Clause 6.6.2: "In the case where the CRID is not
 // known to a Content Guide Server then a 200 (OK) HTTP response shall be returned but the
 // ProgramInformationTable and ProgramLocationTable shall not contain any elements."
-function programDocument(cfg, query, nowMs) {
+function programDocument(cfg, query, nowMs, base) {
   const found = typeof query.pid === 'string' ? eventFromCrid(cfg, query.pid) : null;
   if (!found) return emptyTables(cfg);
   const { svc, ev } = found;
   const pi = programInformation(svc, ev, seriesCridsOf(svc.epgPrograms), { imageVariant: query.image_variant || null });
-  const od = ev.catchupUrl ? onDemandProgram(svc, ev, svc.uid, nowMs) : '';
+  const od = onDemand(cfg, ev) ? onDemandProgram(svc, ev, svc.uid, nowMs, base) : '';
   return tvaMain(cfg, `
     <ProgramInformationTable>${pi}
     </ProgramInformationTable>
@@ -1214,7 +1377,64 @@ function programDocument(cfg, query, nowMs) {
     </ProgramLocationTable>`);
 }
 
-app.get('/epg/program', (req, res) => res.type('xml').send(programDocument(config, req.query, Date.now())));
+app.get('/epg/program', (req, res) => res.type('xml').send(programDocument(config, req.query, Date.now(), publicBase(req))));
+
+// ── Content deep-linked XML AIT (TS 103 770 §5.2.4.3) ──────────────────────────────────
+
+// The XML AIT that launches the catch-up player at one programme, pid being the programme's CRID
+// (the ProgramURL of its OnDemandProgram). Structure and element order are those of mis_xmlait.xsd;
+// one Application, so orgId and appId are trivially the same for all (clause 5.2.4.3). Returns null
+// when the programme is unknown or not offered on demand.
+function deepLinkedAit(cfg, pid) {
+  const found = typeof pid === 'string' ? eventFromCrid(cfg, pid) : null;
+  if (!found || !onDemand(cfg, found.ev)) return null;
+  const p = cfg.catchupPlayer;
+  const opt = (name, v) => v == null ? '' : `\n          <mhp:${name}>${xe(String(v))}</mhp:${name}>`;
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<mhp:ServiceDiscovery xmlns:mhp="urn:dvb:mhp:2009" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <mhp:ApplicationDiscovery DomainName="${xe(p.domainName)}">
+    <mhp:ApplicationList>
+      <mhp:Application>
+        <mhp:appName Language="${xe(p.appNameLang)}">${xe(p.appName)}</mhp:appName>
+        <mhp:applicationIdentifier>
+          <mhp:orgId>${Number(p.orgId)}</mhp:orgId>
+          <mhp:appId>${Number(p.appId)}</mhp:appId>
+        </mhp:applicationIdentifier>
+        <mhp:applicationDescriptor>
+          <mhp:type>
+            <mhp:OtherApp>${xe(p.type)}</mhp:OtherApp>
+          </mhp:type>
+          <mhp:controlCode>${xe(p.controlCode)}</mhp:controlCode>${opt('visibility', p.visibility)}${opt('serviceBound', p.serviceBound)}
+          <mhp:priority>${xe(p.priority)}</mhp:priority>
+          <mhp:version>${xe(p.version)}</mhp:version>
+          <mhp:mhpVersion>
+            <mhp:profile>${xe(p.profile)}</mhp:profile>
+            <mhp:versionMajor>${xe(p.versionMajor)}</mhp:versionMajor>
+            <mhp:versionMinor>${xe(p.versionMinor)}</mhp:versionMinor>
+            <mhp:versionMicro>${xe(p.versionMicro)}</mhp:versionMicro>
+          </mhp:mhpVersion>
+        </mhp:applicationDescriptor>
+        <mhp:applicationTransport xsi:type="mhp:HTTPTransportType">
+          <mhp:URLBase>${xe(p.urlBase)}</mhp:URLBase>
+        </mhp:applicationTransport>
+        <mhp:applicationLocation>${xe(aitLocation(p, found.ev.catchupUrl))}</mhp:applicationLocation>
+      </mhp:Application>
+    </mhp:ApplicationList>
+  </mhp:ApplicationDiscovery>
+</mhp:ServiceDiscovery>`;
+}
+
+// Clause 5.2.4.1: "XML AIT files shall be delivered by Content Providers with the Content-Type header
+// set to application/vnd.dvb.ait+xml." The client appends the contextual parameters of clause
+// 5.2.4.4.6 (regionID[], lloc) to this URL; they are accepted and do not change the response.
+// Clause 4.3.3.4: on a 404 from a "Content Provider XML AIT server the DVB-I client shall not retry
+// the request and deem it to have failed", which is the answer for a programme not on demand.
+app.get('/ait/program.aitx', (req, res) => {
+  const xml = deepLinkedAit(config, req.query.pid);
+  if (!xml) return res.status(404).type('text/plain').send('No on-demand programme with this pid');
+  res.setHeader('Content-Type', AIT_MEDIA_TYPE);
+  res.send(xml);
+});
 
 // ── Admin API ─────────────────────────────────────────────────────────────────
 
@@ -1492,5 +1712,5 @@ if (require.main === module) {
 
 module.exports = {
   app, startServer, buildServiceList, buildSchedule, msDur, cgsidProblem, mbmsLocatorProblem,
-  scheduleDocument, programDocument,
+  scheduleDocument, programDocument, deepLinkedAit, catchupProblem,
 };

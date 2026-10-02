@@ -1,5 +1,20 @@
 # Changelog — rt-dvb-i-application-provider
 
+## 2026-10 — On-demand programmes launch through an XML AIT (ETSI TS 103 770 V1.2.1)
+
+- **`OnDemandProgram/ProgramURL` is a content deep-linked XML AIT** with `@contentType`
+  `application/vnd.dvb.ait+xml` (clause 6.10.8.2, table 52), where it used to be the catch-up
+  stream URL itself. The XML AIT is served at `/ait/program.aitx?pid=<programme CRID>` as
+  `application/vnd.dvb.ait+xml` (clause 5.2.4.1), accepts the `regionID[]` and `lloc` parameters a
+  client appends (clause 5.2.4.4.6), and answers 404 for a programme that is not on demand.
+- **New configuration `catchupPlayer`** (editor card *Catch-up Player (XML AIT)*): the player the
+  XML AIT launches, every value entered by the operator, none defaulted. It is checked on save
+  against the XML AIT schema, ETSI TS 102 809 clause 5.2.3.1 (identifiers) and ETSI TS 102 796
+  V1.8.1 tables 5 and 7 (platform profile and version; HbbTV application rules).
+- **Upgrading:** a list with catch-up URLs and no catch-up player is refused on its next save, and
+  until a player is entered its programmes are published without `OnDemandProgram`. A client that
+  played `ProgramURL` as a stream has to launch the XML AIT instead.
+
 ## 2026-10 — HTTP over TLS (ETSI TS 103 770 V1.2.1 clause 7.3)
 
 - **TLS by default, no fall back.** The server serves HTTPS from `HTTPS_KEY_PATH` and

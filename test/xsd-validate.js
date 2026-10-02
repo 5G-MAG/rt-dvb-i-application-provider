@@ -16,6 +16,10 @@
  *     imports: dvbi_types_v1.0.xsd, tva_metadata_3-1_2024.xsd, tva_mpeg7.xsd, xml.xsd,
  *     hls-url-6.0.xsd, hbbtv-ext-6.0.xsd
  *   - tva_metadata_3-1_2024.xsd (+ tva_mpeg7.xsd) for the EPG check
+ *   - xmlait/mis_xmlait.xsd (+ sdns_v1.4r13.xsd, sdns_v1.5r25b.xsd, tva_mpeg7_2005.xsd and their
+ *     imports beside it) for the content deep-linked XML AIT, at the path from which the
+ *     attachment's dvbi_xmlait_extension_v1.0.xsd imports it; without it the XML AIT is reported
+ *     as not checked
  *
  * Where to get them: the authoritative copies ship with the specification itself. ETSI
  * TS 103 770 V1.2.1 (2024-09) annex B (normative), "Electronic Attachments", lists dvbi_v6.0.xsd,
@@ -69,7 +73,7 @@ let libxml;
 try { libxml = require('libxmljs2'); }
 catch { console.error('libxmljs2 not installed. Run: npm install'); process.exit(2); }
 
-const { app, buildServiceList, scheduleDocument, programDocument } = require('../server.js');
+const { app, buildServiceList, scheduleDocument, programDocument, deepLinkedAit } = require('../server.js');
 
 // Resolve the relative ./ imports inside the XSDs against the schemas dir.
 process.chdir(SCHEMAS);
@@ -78,9 +82,13 @@ function loadXsd(file) {
 }
 const DVBI_XSD = loadXsd(path.basename(DVBI_FILE));
 const TVA_XSD  = loadXsd(path.basename(TVA_FILE));
+// The XML AIT schema of ETSI TS 102 809, in the xmlait/ directory of the closure with its imports.
+const AIT_FILE = pick(path.join('xmlait', 'mis_xmlait.xsd'));
+const AIT_XSD  = AIT_FILE ? loadXsd(path.relative(SCHEMAS, AIT_FILE)) : null;
 console.log(`Schemas: ${SCHEMAS}`);
 console.log(`  service list: ${path.basename(DVBI_FILE)}`);
-console.log(`  TV-Anytime:   ${path.basename(TVA_FILE)}\n`);
+console.log(`  TV-Anytime:   ${path.basename(TVA_FILE)}`);
+console.log(`  XML AIT:      ${AIT_FILE ? path.relative(SCHEMAS, AIT_FILE) : '(none: XML AIT not checked)'}\n`);
 
 // The HLS delivery signalling this generator can emit is described in TS 103 770 annex G, which is
 // informative, and its schema extension is not part of the normative electronic attachment. A
@@ -226,11 +234,27 @@ async function main() {
   const sampleSid = sample.services[0].uid;
   for (const [q, label] of [[{ start: String(slot), end: String(slot + 43200) }, 'schedule, 12 hours'],
                             [{ now_next: 'true' }, 'now_next=true'], [{ now_next: 'window' }, 'now_next=window']]) {
-    check(label, scheduleDocument(sample, { sid: sampleSid, ...q }, now).xml, TVA_XSD);
+    check(label, scheduleDocument(sample, { sid: sampleSid, ...q }, now, 'https://localhost:4000').xml, TVA_XSD);
   }
-  const winXml = scheduleDocument(sample, { sid: sampleSid, now_next: 'window' }, now).xml;
+  const winXml = scheduleDocument(sample, { sid: sampleSid, now_next: 'window' }, now, 'https://localhost:4000').xml;
   const odPid = (winXml.match(/<OnDemandProgram[^>]*>\s*<Program crid="([^"]+)"/) || [])[1];
-  if (odPid) check('programme with catch-up', programDocument(sample, { pid: odPid }, now), TVA_XSD);
+  if (!odPid) { console.log('  ✗ no OnDemandProgram in the sample, so neither check below ran'); failures++; }
+  else check('programme with catch-up', programDocument(sample, { pid: odPid }, now, 'https://localhost:4000'), TVA_XSD);
+
+  // 7) The content deep-linked XML AIT that the sample's ProgramURL points to (TS 103 770 clause
+  //    5.2.4.3), for the sample's HbbTV player and for an HTML5 one without the optional elements.
+  console.log('\nXML AIT (comprehensive sample):');
+  if (!AIT_XSD) {
+    unchecked++;
+    console.log(`  ~ deep-linked XML AIT: NOT CHECKED (no xmlait/mis_xmlait.xsd under ${SCHEMAS}).`);
+  } else if (odPid) {
+    check('deep-linked XML AIT, HbbTV', deepLinkedAit(sample, odPid), AIT_XSD);
+    const html = JSON.parse(JSON.stringify(sample));
+    Object.assign(html.catchupPlayer, { type: 'text/html', controlCode: 'PRESENT', urlBase: 'https://player.example.com/app' });
+    delete html.catchupPlayer.visibility;
+    delete html.catchupPlayer.serviceBound;
+    check('deep-linked XML AIT, HTML5', deepLinkedAit(html, odPid), AIT_XSD);
+  }
 
   const note = unchecked ? ` (${unchecked} not checked, see above)` : '';
   console.log(`\n==== ${failures === 0 ? 'ALL VALID' : failures + ' FAILURE(S)'}${note} ====`);

@@ -5,6 +5,13 @@
   "listLang": "en",
   "targetCountry": "GBR",
   "epg": { "id": "sample-epg", "providerName": "Sample EPG" },
+  "catchupPlayer": {
+    "domainName": "player.example.com", "appName": "Sample Player", "appNameLang": "eng",
+    "orgId": 123, "appId": 1, "type": "application/vnd.hbbtv.xhtml+xml",
+    "controlCode": "AUTOSTART", "visibility": "VISIBLE_ALL", "serviceBound": false,
+    "priority": "1", "version": "01", "profile": "0", "versionMajor": "1", "versionMinor": "3", "versionMicro": "1",
+    "urlBase": "https://player.example.com/", "location": "catchup/index.html", "contentParameter": "media"
+  },
   "services": [
     {
       "id": "svc-a", "uid": "tag:sample,2024:service:a", "version": 3,

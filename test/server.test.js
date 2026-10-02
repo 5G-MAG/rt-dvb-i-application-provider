@@ -585,15 +585,30 @@ const TNS = { t: 'urn:tva:metadata:2024', xsi: 'http://www.w3.org/2001/XMLSchema
 const NOW = Date.UTC(2026, 9, 2, 12, 10);
 const MIDNIGHT_S = Date.UTC(2026, 9, 2) / 1000;
 
+// A catch-up player as an operator would enter it: an HbbTV application, so ETSI TS 102 796
+// clause 7.2.3.2 table 7 applies (AUTOSTART, VISIBLE_ALL, serviceBound false, URLBase ending "/").
+function catchupPlayer(overrides = {}) {
+  return {
+    domainName: 'player.example.com', appName: 'Example Player', appNameLang: 'eng', orgId: 123, appId: 1,
+    type: 'application/vnd.hbbtv.xhtml+xml', controlCode: 'AUTOSTART', visibility: 'VISIBLE_ALL',
+    serviceBound: false, priority: '1', version: '01', profile: '0', versionMajor: '1', versionMinor: '3',
+    versionMicro: '1', urlBase: 'https://player.example.com/', location: 'catchup/index.html?ui=tv',
+    contentParameter: 'media', ...overrides,
+  };
+}
+
 function guideConfig() {
-  return sampleConfig({ epgPrograms: [
+  const cfg = sampleConfig({ epgPrograms: [
     { title: 'Morning News', dur: 60, desc: 'Headlines', genre: 'news', parentalAge: 12, seriesTitle: 'Daily',
       seriesNumber: 1, episodeNumber: 3, image: 'https://img.example.com/news.jpg', catchupUrl: 'https://vod.example.com/news' },
     { title: 'Weather', dur: 30, desc: 'Forecast', image: 'https://img.example.com/w.webp' },
   ] });
+  cfg.catchupPlayer = catchupPlayer();
+  return cfg;
 }
 const sid = 'tag:test,2024:service:a';
-const sched = (q, cfg = guideConfig()) => scheduleDocument(cfg, { sid, ...q }, NOW);
+const GUIDE_BASE = 'https://guide.example.com';
+const sched = (q, cfg = guideConfig()) => scheduleDocument(cfg, { sid, ...q }, NOW, GUIDE_BASE);
 
 test('service refers to its content guide source with ContentGuideSourceRef, and is queried by UniqueIdentifier (clause 6.1)', () => withServer(async base => {
   const cfg = guideConfig();
@@ -777,6 +792,169 @@ test('PUT /api/config refuses a programme title over 80 or a description over 25
   res = await putConfig(base, cfg);
   assert.equal(res.status, 400);
   assert.match((await res.json()).error, /250 characters/);
+}));
+
+// ── Content deep-linked XML AIT (TS 103 770 V1.2.1 clauses 5.2.4, 6.10.8.2 table 52)
+
+const { deepLinkedAit, catchupProblem } = require('../server.js');
+const MHP = { m: 'urn:dvb:mhp:2009', xsi: 'http://www.w3.org/2001/XMLSchema-instance' };
+const AIT_TYPE = 'application/vnd.dvb.ait+xml';
+
+test('OnDemandProgram ProgramURL is the programme\'s XML AIT with @contentType application/vnd.dvb.ait+xml (table 52)', () => {
+  for (const q of [{ now_next: 'window' }, { start: String(MIDNIGHT_S + 3 * 10800), end: String(MIDNIGHT_S + 5 * 10800) }]) {
+    const doc = parse(sched(q).xml);
+    const ods = doc.find('//t:OnDemandProgram', TNS);
+    assert.ok(ods.length > 0);
+    for (const od of ods) {
+      const url = od.get('./t:ProgramURL', TNS);
+      assert.equal(url.attr('contentType').value(), AIT_TYPE);
+      const crid = od.get('./t:Program', TNS).attr('crid').value();
+      assert.equal(url.text(), `${GUIDE_BASE}/ait/program.aitx?pid=${encodeURIComponent(crid)}`);
+      assert.ok(!url.text().includes('vod.example.com'), 'not the catch-up stream itself');
+    }
+  }
+  const crid = parse(sched({ now_next: 'window' }).xml).get('//t:OnDemandProgram/t:Program', TNS).attr('crid').value();
+  const pi = parse(programDocument(guideConfig(), { pid: crid }, NOW, GUIDE_BASE));
+  assert.equal(pi.get('//t:OnDemandProgram/t:ProgramURL', TNS).attr('contentType').value(), AIT_TYPE);
+});
+
+test('XML AIT endpoint: application/vnd.dvb.ait+xml, deep-linked to the programme, contextual parameters accepted (clauses 5.2.4.1, 5.2.4.3, 5.2.4.4.6)', () => withServer(async base => {
+  const cfg = guideConfig();
+  assert.equal((await putConfig(base, cfg)).status, 200);
+  const nn = parse(await (await fetch(`${base}/epg/schedule?sid=${encodeURIComponent(sid)}&now_next=window`)).text());
+  const programUrl = nn.get('//t:OnDemandProgram/t:ProgramURL', TNS).text();
+  assert.ok(programUrl.startsWith(`${base}/ait/program.aitx?pid=`), programUrl);
+  for (const url of [programUrl, `${programUrl}&regionID[]=GBR-ENG&regionID[]=GBR-SCT&lloc=epg`]) {
+    const res = await fetch(url);
+    assert.equal(res.status, 200, url);
+    assert.equal((res.headers.get('content-type') || '').split(';')[0].trim(), AIT_TYPE);
+    const text = await res.text();
+    assert.ok(!text.includes('<!DOCTYPE'), 'no Document Type Definition (ETSI TS 102 796 clause 7.2.3.2)');
+    const ait = parse(text);
+    const p = cfg.catchupPlayer;
+    assert.equal(ait.get('/m:ServiceDiscovery/m:ApplicationDiscovery', MHP).attr('DomainName').value(), p.domainName);
+    const apps = ait.find('//m:ApplicationList/m:Application', MHP);
+    assert.equal(apps.length, 1);
+    const app = apps[0];
+    const val = x => app.get(x, MHP).text();
+    assert.equal(val('./m:appName'), p.appName);
+    assert.equal(app.get('./m:appName', MHP).attr('Language').value(), p.appNameLang);
+    assert.equal(val('./m:applicationIdentifier/m:orgId'), '123');
+    assert.equal(val('./m:applicationIdentifier/m:appId'), '1');
+    assert.equal(val('./m:applicationDescriptor/m:type/m:OtherApp'), 'application/vnd.hbbtv.xhtml+xml');
+    assert.equal(val('./m:applicationDescriptor/m:controlCode'), 'AUTOSTART');
+    assert.equal(val('./m:applicationDescriptor/m:visibility'), 'VISIBLE_ALL');
+    assert.equal(val('./m:applicationDescriptor/m:serviceBound'), 'false');
+    assert.equal(val('./m:applicationDescriptor/m:priority'), '1');
+    assert.equal(val('./m:applicationDescriptor/m:version'), '01');
+    assert.deepEqual(['profile', 'versionMajor', 'versionMinor', 'versionMicro']
+      .map(k => val(`./m:applicationDescriptor/m:mhpVersion/m:${k}`)), ['0', '1', '3', '1']);
+    assert.equal(app.get('./m:applicationTransport/@xsi:type', MHP).value(), 'mhp:HTTPTransportType');
+    const urlBase = val('./m:applicationTransport/m:URLBase');
+    const loc = val('./m:applicationLocation');
+    assert.equal(urlBase, p.urlBase);
+    // Clause 5.2.4.3: the concatenation forms the launch URL, here the configured location with the
+    // programme's catch-up URL as the configured parameter.
+    const launch = new URL(urlBase + loc);
+    assert.equal(launch.pathname, '/catchup/index.html');
+    assert.equal(launch.searchParams.get('ui'), 'tv');
+    assert.equal(launch.searchParams.get('media'), 'https://vod.example.com/news');
+  }
+}));
+
+test('XML AIT endpoint: 404 for a programme not on demand, an unknown pid and no pid (clause 4.3.3.4)', () => withServer(async base => {
+  assert.equal((await putConfig(base, guideConfig())).status, 200);
+  const nn = parse(await (await fetch(`${base}/epg/schedule?sid=${encodeURIComponent(sid)}&now_next=window`)).text());
+  const notOnDemand = nn.get('//t:ProgramInformation[not(t:BasicDescription/t:Genre)]', TNS).attr('programId').value();
+  for (const q of [`?pid=${encodeURIComponent(notOnDemand)}`, '?pid=crid%3A%2F%2Felsewhere%2Fx', '']) {
+    assert.equal((await fetch(`${base}/ait/program.aitx${q}`)).status, 404, q || 'no pid');
+  }
+}));
+
+test('without a usable catch-up player no OnDemandProgram is written, and there is no XML AIT', () => {
+  const crid = parse(sched({ now_next: 'window' }).xml).get('//t:OnDemandProgram/t:Program', TNS).attr('crid').value();
+  assert.ok(deepLinkedAit(guideConfig(), crid), 'served with the player configured');
+  const none = guideConfig(); delete none.catchupPlayer;
+  const broken = guideConfig(); broken.catchupPlayer.orgId = '';
+  for (const cfg of [none, broken]) {
+    for (const q of [{ now_next: 'window' }, { start: String(MIDNIGHT_S + 3 * 10800), end: String(MIDNIGHT_S + 5 * 10800) }]) {
+      const doc = parse(sched(q, cfg).xml);
+      assert.equal(doc.find('//t:OnDemandProgram', TNS).length, 0);
+      assert.ok(doc.find('//t:ScheduleEvent', TNS).length > 0, 'the schedule itself is still there');
+    }
+    const pi = parse(programDocument(cfg, { pid: crid }, NOW, GUIDE_BASE));
+    assert.equal(pi.find('//t:ProgramLocationTable/*', TNS).length, 0);
+    assert.equal(deepLinkedAit(cfg, crid), null);
+  }
+});
+
+test('catch-up player: values the clauses or the XML AIT schema do not allow are refused', () => {
+  const withPlayer = overrides => { const c = guideConfig(); c.catchupPlayer = catchupPlayer(overrides); return catchupProblem(c); };
+  assert.equal(withPlayer({}), null);
+  const html = { type: 'text/html', controlCode: 'PRESENT', visibility: undefined, serviceBound: undefined, urlBase: 'https://player.example.com/app' };
+  assert.equal(withPlayer(html), null, 'table 7 of TS 102 796 binds HbbTV applications only');
+  assert.equal(withPlayer({ location: '' }), null, 'no location: the parameter alone');
+  for (const [o, re, why] of [
+    [{ domainName: 'localhost' }, /DomainName/, 'DomainType needs a "."'],
+    [{ appName: ' ' }, /appName/, 'appName is mandatory'],
+    [{ appNameLang: 'en' }, /ISO 639-2/, 'Language is three letters'],
+    [{ orgId: 0 }, /orgId/, 'organisation_id zero'],
+    [{ orgId: 0x1000000 }, /orgId/, 'most significant 8 bits not zero'],
+    [{ orgId: undefined }, /orgId/, 'missing'],
+    [{ appId: 0 }, /appId/, 'application_id zero'],
+    [{ appId: 0xa000 }, /appId/, 'reserved range'],
+    [{ appId: 0xffff }, /appId/, 'wildcard'],
+    [{ type: 'video/mp4' }, /type must be one of/, 'not a clause 5.2.4.1 type'],
+    [{ controlCode: 'START' }, /controlCode must be/, 'not in the schema'],
+    [{ controlCode: 'PRESENT' }, /AUTOSTART/, 'HbbTV: AUTOSTART'],
+    [{ visibility: undefined }, /VISIBLE_ALL/, 'HbbTV: VISIBLE_ALL'],
+    [{ serviceBound: true }, /serviceBound/, 'HbbTV: false'],
+    [{ priority: 'xyz' }, /priority/, 'Hexadecimal8bit'],
+    [{ version: '1' }, /version must be two/, 'ipi:Version'],
+    [{ profile: '' }, /profile/, 'platform profile required'],
+    [{ profile: '4' }, /profile must be/, 'not a table 5 profile'],
+    [{ versionMinor: '9' }, /1\.9\.1 is not/, 'not a table 5 version'],
+    [{ urlBase: 'player/' }, /absolute/, 'relative URLBase'],
+    [{ urlBase: 'https://player.example.com/app' }, /slash/, 'HbbTV: URLBase ends with /'],
+    [{ location: 'a b' }, /location/, 'not a URL'],
+    [{ contentParameter: '' }, /contentParameter/, 'missing'],
+    [{ contentParameter: 'lloc' }, /contextual parameter/, 'clause 5.2.4.4.6 name'],
+    [{ location: 'p?regionID[]=x' }, /contextual parameter/, 'clause 5.2.4.4.6 name in the location'],
+  ]) assert.match(withPlayer(o) || '', re, why);
+  const long = guideConfig(); long.services[0].epgPrograms[0].catchupUrl = 'https://vod.example.com/' + 'x'.repeat(2000);
+  assert.match(catchupProblem(long) || '', /2 048 characters/, 'HbbTV launch URL over 2 048 characters');
+  const htmlLong = guideConfig(); htmlLong.catchupPlayer = catchupPlayer(html);
+  htmlLong.services[0].epgPrograms[0].catchupUrl = long.services[0].epgPrograms[0].catchupUrl;
+  assert.equal(catchupProblem(htmlLong), null, 'the 2 048 limit is HbbTV\'s');
+});
+
+test('editor: the catch-up player round-trips through the form unchanged, and an empty form gives none', () => {
+  const vm = require('node:vm');
+  const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
+  const src = [/function populateSettings\(\) \{[\s\S]*?\n\}/, /const CATCHUP_FIELDS = [\s\S]*?;/,
+    /function readCatchupPlayer\(\) \{[\s\S]*?\n\}/].map(re => html.match(re)[0]).join('\n');
+  const els = new Map();
+  const document = { getElementById: id => { if (!els.has(id)) els.set(id, { value: '' }); return els.get(id); } };
+  const ctx = { config: { epg: {}, catchupPlayer: catchupPlayer() }, document, out: null };
+  vm.createContext(ctx);
+  vm.runInContext(`${src}; populateSettings(); out = readCatchupPlayer();`, ctx);
+  assert.deepEqual(JSON.parse(JSON.stringify(ctx.out)), catchupPlayer());
+  for (const [id, el] of els) if (id.startsWith('cup-')) el.value = '';
+  vm.runInContext('out = readCatchupPlayer();', ctx);
+  assert.equal(ctx.out, null);
+});
+
+test('PUT /api/config refuses a catch-up URL without a catch-up player, and accepts both or neither (clause 6.5.4.1, table 52)', () => withServer(async base => {
+  const cfg = guideConfig();
+  delete cfg.catchupPlayer;
+  const res = await putConfig(base, cfg);
+  assert.equal(res.status, 400);
+  assert.match((await res.json()).error, /epgPrograms\[0\] has a catch-up URL, but no catch-up player/);
+  cfg.services[0].epgPrograms[0].catchupUrl = null;
+  assert.equal((await putConfig(base, cfg)).status, 200, 'no catch-up, no player');
+  const bad = guideConfig(); bad.catchupPlayer.appId = 0;
+  assert.equal((await putConfig(base, bad)).status, 400, 'a player that cannot be written');
+  assert.equal((await putConfig(base, guideConfig())).status, 200, 'catch-up with a player');
 }));
 
 // ── HTTP over TLS (TS 103 770 V1.2.1 clause 7.3)

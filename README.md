@@ -29,7 +29,7 @@
 |  |  |
 |---|---|
 | **Implements** | ETSI TS 103 770 V1.2.1 (2024-09), *Digital Video Broadcasting (DVB); Service Discovery and Programme Metadata for DVB-I* |
-| **Serves** | `/service-list.xml`, `/epg/schedule`, `/epg/program`, an admin UI on `/` |
+| **Serves** | `/service-list.xml`, `/epg/schedule`, `/epg/program`, `/ait/program.aitx` (XML AIT per on-demand programme), an admin UI on `/` |
 | **Part of** | [DVB-I Services over 5G Systems](https://www.5g-mag.com/reference-tools/dvb-i), alongside [rt-dvb-i-application](https://github.com/5G-MAG/rt-dvb-i-application) (the receiver), [rt-dvb-i-service-list-registry](https://github.com/5G-MAG/rt-dvb-i-service-list-registry) (discovery), [rt-dvb-i-examples](https://github.com/5G-MAG/rt-dvb-i-examples) (runnable demos) and [rt-5gms-application](https://github.com/5G-MAG/rt-5gms-application) (the Exo DVB-I Player) |
 
 ## Introduction
@@ -83,6 +83,33 @@ leaves the admin API and the logo upload open to anyone who can reach the port.
 `templates/` holds ready-made starting points offered by the editor: a reference service with every
 supported field populated, and the channel line-up of the live demo. Files are read on each request,
 so adding one changes what the editor offers without a restart.
+
+## Catch-up (on-demand programmes)
+
+A programme with a catch-up URL is offered on demand. Its `OnDemandProgram/ProgramURL` is not the
+stream: it is the URL of a content deep-linked XML AIT, `/ait/program.aitx?pid=<programme CRID>`,
+with `@contentType` `application/vnd.dvb.ait+xml` (ETSI TS 103 770 V1.2.1 clause 6.10.8.2, table 52).
+That XML AIT launches your catch-up player at `URL Base` + `Location`, with the programme's catch-up
+URL in the query parameter you name, and is served as `application/vnd.dvb.ait+xml`.
+
+Enter the player in the editor's *Catch-up Player (XML AIT)* card (`catchupPlayer` in `config.json`):
+domain name, application name and its ISO 639-2 language, organisation and application IDs,
+application type, control code, optional visibility and service bound, priority, version, platform
+profile and version, URL base, location and the parameter name. None of these has a default.
+
+- **A catch-up URL without a usable player is refused on save**, naming the field and the clause.
+  Clause 6.5.4.1 requires an `OnDemandProgram` for an on-demand programme, and table 52 makes its
+  `ProgramURL` mandatory and an XML AIT, so the provider cannot publish one without the other.
+  This includes the reference service template, whose second programme has a catch-up URL.
+- **A list already on disk** that has catch-up URLs and no usable player still loads, with a
+  warning; its programmes are published without `OnDemandProgram`, and `/ait/program.aitx`
+  answers 404, as it does for any programme that is not on demand.
+- The platform profile and version must be values of ETSI TS 102 796 table 5 (V1.8.1: profile 0 to
+  3, version 1.1.1 to 1.8.1). An HbbTV player (`application/vnd.hbbtv.xhtml+xml`) must also meet
+  TS 102 796 table 7: control code `AUTOSTART`, visibility `VISIBLE_ALL`, service bound false, a URL
+  base ending in `/`, and a launch URL of at most 2 048 characters.
+- The player has to accept the catch-up URL as that query parameter; the parameter cannot be
+  `regionID[]` or `lloc`, which the client appends to the XML AIT URL (clause 5.2.4.4.6).
 
 ## 5G Broadcast instances
 

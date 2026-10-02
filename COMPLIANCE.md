@@ -195,12 +195,33 @@ where wrong:
   algorithms, key sizes and curves clause 7.3 takes from ETSI TS 102 796 clause 11.2 are not
   configured, since that document is not held. `PLAIN_HTTP=private-subnet` does not verify that
   clients are on the same private subnet.
-- **`OnDemandProgram/ProgramURL` is the catch-up stream URL, not a deep-linked XML AIT.** ETSI
-  TS 103 770 V1.2.1 table 52 requires "A URL location of a content deep-linked XML AIT for the
-  on-demand programme" with `@contentType` `application/vnd.dvb.ait+xml`. An XML AIT names a player
-  application (its `orgId` and `appId`, application type, platform profile from ETSI TS 102 796, and
-  the `URLBase` and `applicationLocation` it launches at); this provider configures none of these,
-  so no valid one can be generated and the element is left as it was.
+- **On-demand programmes: what the content deep-linked XML AIT does and does not cover.**
+  ETSI TS 103 770 V1.2.1 clause 6.10.8.2, table 52, row ProgramURL: "A URL location of a content
+  deep-linked XML AIT for the on-demand programme." `ProgramURL` points to `/ait/program.aitx`
+  with `@contentType` `application/vnd.dvb.ait+xml`; the XML AIT carries the operator's
+  `catchupPlayer` values and is VALID against `xmlait/mis_xmlait.xsd` (`npm run test:xsd`).
+  Limits:
+  - **Platform profile and version** are checked against ETSI TS 102 796 V1.8.1 (2026-09) clause
+    7.2.3.1, table 5, row "5.2.5 Platform profiles". Clause 5.2.4.2 cites it as reference [21],
+    which is undated, so the latest issue applies; V1.8.1 is that issue as of 2026-10-02. A later
+    issue that adds a version needs the list in `server.js` extended.
+  - **`version` of an HbbTV application**: TS 102 796 table 7 replaces its type with
+    `mhp:unsignedInt31Bit`, which is not defined in the schemas held; only the `ipi:Version` form
+    of `mis_xmlait.xsd` (two hexadecimal digits) is checked.
+  - **`orgId`** is checked for range only; whether it is registered with DVB is not.
+  - **No `application/vnd.dvbi.non` XML AIT.** Clause 5.2.4.2 requires one where the provider "is
+    unable to provide a suitable application based on device specific information". This provider
+    never tailors the application to the device, so the case does not arise; the contextual
+    parameters are accepted and ignored.
+  - **The deep link is a query parameter.** Clause 5.2.4.3 leaves the form of `applicationLocation`
+    "at the discretion of the Content Provider"; this provider always appends the catch-up URL as
+    the configured parameter, so a player expecting it elsewhere (for example in the path) cannot
+    be configured.
+  - **`AuxiliaryURL` (Template XML AIT) is not written.** The specification is inconsistent on
+    whether it must be: table 52, row AuxiliaryURL, marks it "Optional {0..1}", while clause
+    5.2.4.4.2 reads "Within every OnDemandProgram element supplied through the content guide
+    interface there shall be an AuxiliaryURL referencing a Template XML AIT." Left out until that
+    is resolved.
 - **A known service with no event in the requested period gets an empty TV-Anytime document.**
   Clause 6.5.4.1 asks for "an empty Schedule element", but `tva_metadata_3-1.xsd`, attached to the
   same specification, requires at least one `ScheduleEvent` in a `Schedule`. The two cannot both be
