@@ -69,7 +69,7 @@ let libxml;
 try { libxml = require('libxmljs2'); }
 catch { console.error('libxmljs2 not installed. Run: npm install'); process.exit(2); }
 
-const { app, buildServiceList } = require('../server.js');
+const { app, buildServiceList, scheduleDocument, programDocument } = require('../server.js');
 
 // Resolve the relative ./ imports inside the XSDs against the schemas dir.
 process.chdir(SCHEMAS);
@@ -193,22 +193,44 @@ async function main() {
   console.log('\nService list (templates/):');
   checkTemplates(sample);
 
-  // 5) EPG — spin up the app against the live config.json and validate the real endpoints
+  // 5) EPG — spin up the app against the live config.json and validate the real endpoints: a
+  //    timestamp request for the current 6 hour slot, both now/next forms, a programme by pid, and
+  //    an unknown service.
   console.log('\nEPG (live config.json endpoints):');
   const server = app.listen(0);
   await new Promise(r => server.once('listening', r));
   const port = server.address().port;
   const cfg  = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config.json'), 'utf8'));
   const svc  = (cfg.services || []).find(s => (s.epgPrograms || []).length) || (cfg.services || [])[0];
+  const slot = Math.floor(Date.now() / 1000 / 10800) * 10800;
+  const window6h = `start=${slot}&end=${slot + 21600}`;
   if (svc) {
-    for (const [ep, label] of [['schedule', 'epg-schedule.xml'], ['nownext', 'epg-nownext.xml']]) {
-      const xml = await get(port, `/epg/${ep}?sid=${encodeURIComponent(svc.uid)}`);
-      check(label, xml, TVA_XSD);
+    const sid = encodeURIComponent(svc.uid);
+    for (const [q, label] of [[window6h, 'epg-schedule.xml'], ['now_next=true', 'epg-nownext.xml'],
+                              ['now_next=window', 'epg-nownext-window.xml']]) {
+      check(label, await get(port, `/epg/schedule?sid=${sid}&${q}`), TVA_XSD);
     }
+    const pid = ((await get(port, `/epg/schedule?sid=${sid}&now_next=true`)).match(/programId="([^"]+)"/) || [])[1];
+    if (pid) check('epg-program.xml', await get(port, `/epg/program?pid=${encodeURIComponent(pid)}`), TVA_XSD);
   } else {
     console.log('  (no services in config.json — skipped)');
   }
+  check('epg-schedule.xml, unknown sid', await get(port, `/epg/schedule?sid=no-such-service&${window6h}`), TVA_XSD);
+  check('epg-program.xml, unknown pid', await get(port, '/epg/program?pid=crid%3A%2F%2Fnone%2Fx'), TVA_XSD);
   server.close();
+
+  // 6) EPG for the comprehensive sample, whose programmes carry series, images, parental ratings
+  //    and catch-up, rendered by the same functions the endpoints use.
+  console.log('\nEPG (comprehensive sample):');
+  const now = Date.now();
+  const sampleSid = sample.services[0].uid;
+  for (const [q, label] of [[{ start: String(slot), end: String(slot + 43200) }, 'schedule, 12 hours'],
+                            [{ now_next: 'true' }, 'now_next=true'], [{ now_next: 'window' }, 'now_next=window']]) {
+    check(label, scheduleDocument(sample, { sid: sampleSid, ...q }, now).xml, TVA_XSD);
+  }
+  const winXml = scheduleDocument(sample, { sid: sampleSid, now_next: 'window' }, now).xml;
+  const odPid = (winXml.match(/<OnDemandProgram[^>]*>\s*<Program crid="([^"]+)"/) || [])[1];
+  if (odPid) check('programme with catch-up', programDocument(sample, { pid: odPid }, now), TVA_XSD);
 
   const note = unchecked ? ` (${unchecked} not checked, see above)` : '';
   console.log(`\n==== ${failures === 0 ? 'ALL VALID' : failures + ' FAILURE(S)'}${note} ====`);

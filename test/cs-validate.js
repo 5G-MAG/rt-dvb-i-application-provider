@@ -139,8 +139,9 @@ async function main() {
   const port = server.address().port;
   const svc = (live.services || []).find(s => (s.epgPrograms || []).length);
   if (svc) {
-    for (const ep of ['schedule', 'nownext']) {
-      checkDoc(`epg/${ep}`, await get(port, `/epg/${ep}?sid=${encodeURIComponent(svc.uid)}`));
+    const slot = Math.floor(Date.now() / 1000 / 10800) * 10800;
+    for (const q of [`start=${slot}&end=${slot + 21600}`, 'now_next=window']) {
+      checkDoc(`epg/schedule?${q}`, await get(port, `/epg/schedule?sid=${encodeURIComponent(svc.uid)}&${q}`));
     }
   }
   server.close();

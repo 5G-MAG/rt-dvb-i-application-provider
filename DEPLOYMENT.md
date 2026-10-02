@@ -12,7 +12,9 @@ cd rt-dvb-i-application-provider && npm install && npm start      # http://local
 cd rt-dvb-i-application && npm install && npm start    # http://localhost:5000
 ```
 
-Published service list: `GET /service-list.xml` (public). EPG: `GET /epg/schedule?sid=<uid>`, `GET /epg/nownext?sid=<uid>`.
+Published service list: `GET /service-list.xml` (public).
+EPG: `GET /epg/schedule?sid=<uid>&start=<unixtime>&end=<unixtime>` or `&now_next=true|window`,
+`GET /epg/program?pid=<crid>` (ETSI TS 103 770 V1.2.1 clauses 6.5 and 6.6).
 
 ## Admin authentication (IMPORTANT)
 

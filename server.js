@@ -49,7 +49,7 @@ fs.mkdirSync(HISTORY_DIR, { recursive: true });
 // ContentGuideSource/@CGSID is typed xs:ID by the DVB-I schema (ContentGuideProviderIdType, a
 // restriction of ID), so it must be an NCName: no leading digit, no colon, no space. A value that
 // is not produces a service list that fails schema validation while looking perfectly reasonable
-// in the editor, and the ContentGuideServiceRef values pointing at it inherit the problem.
+// in the editor, and the ContentGuideSourceRef values pointing at it inherit the problem.
 //
 // Rejected on write rather than rewritten: silently correcting an operator's identifier would
 // break every reference to it, and the operator is the one who knows what it should be.
@@ -199,8 +199,28 @@ function countryProblem(cfg) {
   return null;
 }
 
+// Table 42 (clause 6.10.5.2): Title "The character length shall not exceed 80 characters for
+// either."; a medium Synopsis "shall not exceed 250 characters". Each programme's title and
+// description are written as those, so longer ones are refused rather than cut.
+function guideProblem(cfg) {
+  const chars = v => [...String(v == null ? '' : v)].length;
+  for (const [i, s] of (cfg.services || []).entries()) {
+    for (const [j, p] of ((s && s.epgPrograms) || []).entries()) {
+      if (chars(p && p.title) > 80) {
+        return `services[${i}].epgPrograms[${j}]: the title is longer than 80 characters (TS 103 770 clause 6.10.5.2, table 42).`;
+      }
+      if (chars(p && p.desc) > 250) {
+        return `services[${i}].epgPrograms[${j}]: the description is longer than 250 characters, the limit of a medium ` +
+               `synopsis (TS 103 770 clause 6.10.5.2, table 42).`;
+      }
+    }
+  }
+  return null;
+}
+
 function publishProblem(cfg) {
-  return uidProblem(cfg) || priorityProblem(cfg) || languagesProblem(cfg) || countryProblem(cfg);
+  return uidProblem(cfg) || priorityProblem(cfg) || languagesProblem(cfg) || countryProblem(cfg) ||
+         guideProblem(cfg);
 }
 
 // Clause 5.2.8.2.1, table 8: the permissible image_variant values. "The list of image_variant
@@ -757,9 +777,12 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
     const svcTypeValue = SERVICE_TYPE_CS[s.type] || 'linear';
     const serviceTypeEl = `\n    <ServiceType href="urn:dvb:metadata:cs:ServiceTypeCS:2019:${xe(svcTypeValue)}"/>`;
 
-    // ContentGuideServiceRef at Service level (TS 103 770 §5.5.2, not inside ServiceInstance)
+    // Clause 6.1: "Individual services within a service list reference one of the content guide
+    // sources in the set by providing an ID in their ContentGuideSourceRef element that matches a
+    // CGSID." No ContentGuideServiceRef is written, so clients query the guide with the
+    // UniqueIdentifier, which is what /epg/schedule answers to.
     const cgsRef = s.customEpgUrl ? `epg-${s.id}` : cfg.epg.id;
-    const cgsRefEl = `\n    <ContentGuideServiceRef>${xe(cgsRef)}</ContentGuideServiceRef>`;
+    const cgsRefEl = `\n    <ContentGuideSourceRef>${xe(cgsRef)}</ContentGuideSourceRef>`;
 
     // ParentalRating (TS 103 770 §5.5.28) — service-list element; MinimumAge has no tva: prefix here
     const pgEl = s.parentalRating != null && s.parentalRating !== '' && s.parentalRating !== null
@@ -774,7 +797,7 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
 
     // ServiceType sequence (no ServiceRestriction/SubscriptionPackage/Availability here — those moved
     // to ServiceInstance): UniqueIdentifier, ServiceInstance*, TargetRegion*, ServiceName+, ProviderName,
-    // RelatedMaterial* (logo, then linked app), ServiceGenre*, ServiceType*, ContentGuideServiceRef?, ParentalRating?
+    // RelatedMaterial* (logo, then linked app), ServiceGenre*, ServiceType*, ContentGuideSourceRef?, ParentalRating?
     return `
   <!-- ${xe(s.name)} -->
   <Service version="${xe(String(s.version || 1))}">
@@ -828,7 +851,7 @@ ${packages.map(p => `    <SubscriptionPackage>${xe(p)}</SubscriptionPackage>`).j
         <dvbisd-t:URI>${xe(base)}/epg/schedule</dvbisd-t:URI>
       </ScheduleInfoEndpoint>
       <ProgramInfoEndpoint contentType="application/xml">
-        <dvbisd-t:URI>${xe(base)}/epg/nownext</dvbisd-t:URI>
+        <dvbisd-t:URI>${xe(base)}/epg/program</dvbisd-t:URI>
       </ProgramInfoEndpoint>
     </ContentGuideSource>${perSvcCGS}
   </ContentGuideSourceList>
@@ -900,19 +923,49 @@ function msDur(ms) {
   return `PT${h ? h + 'H' : ''}${m ? m + 'M' : ''}${sec ? sec + 'S' : ''}`;
 }
 
-function buildSchedule(progs) {
-  const now = Date.now();
-  let t = now - (now % 3600000) - 7200000;
-  const items = [];
-  let i = 0;
-  while (t < now + 8 * 3600000) {
-    const progIdx = i % progs.length;
-    const p = progs[progIdx];
-    const durMs = p.dur * 60000;
-    items.push({ ...p, startMs: t, endMs: t + durMs, durMs, progIdx });
-    t += durMs; i++;
+// The generated schedule repeats a service's programmes back to back, the cycle starting at the
+// Unix epoch, so the same instant always falls in the same event whichever window is asked for.
+// Returns the events that overlap [fromMs, toMs).
+function buildSchedule(progs, fromMs, toMs) {
+  const items = (progs || []).map((p, progIdx) => ({ p, progIdx, durMs: Number(p.dur) * 60000 }))
+    .filter(x => x.durMs > 0);
+  const period = items.reduce((a, x) => a + x.durMs, 0);
+  if (!period) return [];
+  const out = [];
+  let t = Math.floor(fromMs / period) * period;
+  for (let i = 0; t < toMs; i = (i + 1) % items.length) {
+    const { p, progIdx, durMs } = items[i];
+    if (t + durMs > fromMs) out.push({ ...p, startMs: t, endMs: t + durMs, durMs, progIdx });
+    t += durMs;
   }
-  return items;
+  return out;
+}
+
+// One CRID per scheduled event, naming the service and the event's start, so that a pid taken from
+// any response identifies one programme of one service (clause 6.6.2).
+const CRID_BASE = 'crid://dvbi.example.com/2024';
+const eventCrid = (svc, ev) => `${CRID_BASE}/prog/${encodeURIComponent(svc.id)}/${ev.startMs / 1000}`;
+
+function eventFromCrid(cfg, crid) {
+  const m = /^crid:\/\/dvbi\.example\.com\/2024\/prog\/([^/]+)\/(\d+)$/.exec(String(crid || ''));
+  if (!m) return null;
+  const svc = cfg.services.find(s => encodeURIComponent(s.id) === m[1]);
+  if (!svc) return null;
+  const startMs = Number(m[2]) * 1000;
+  const ev = buildSchedule(svc.epgPrograms, startMs, startMs + 1).find(e => e.startMs === startMs);
+  return ev ? { svc, ev } : null;
+}
+
+// Series groups for GroupInformation/MemberOf (TS 103 770 §6.10.17)
+function seriesCridsOf(progs) {
+  const seriesCrids = {};
+  let idx = 0;
+  for (const p of progs || []) {
+    if (!p.seriesTitle) continue;
+    const key = `${p.seriesTitle}::${p.seriesNumber || ''}`;
+    if (!seriesCrids[key]) seriesCrids[key] = `crid://dvbi.example.com/2024/series/${++idx}`;
+  }
+  return seriesCrids;
 }
 
 // An empty TV-Anytime document, used for both "this service carries no programmes" and "no such
@@ -925,70 +978,166 @@ function emptyTVAMain(cfg) {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<TVAMain xmlns="urn:tva:metadata:2024" xmlns:mpeg7="urn:tva:mpeg7:2008" xml:lang="${xe(cfg.listLang || 'en')}"/>`;
 }
 
-app.get('/epg/schedule', (req, res) => {
-  const serviceId = req.query.sid || req.query.serviceId; // sid is spec-compliant (TS 103 770 §6.5.2.2)
-  const svc   = config.services.find(s => s.uid === serviceId);
-  const progs = svc?.epgPrograms;
-  // A service that exists but carries no programmes is not an error, and must not be answered with
-  // 404: per TS 103 770 V1.2.1 clause 4.3.3.4, a 404 from a ContentGuideSource API URL makes the
-  // client re-acquire the whole Service List and then apply the back-off model of clause 4.3.3.7.
-  // Spending that on the normal "nothing scheduled" case is wrong, so an empty but valid document
-  // is returned with 200 instead. 404 is kept for a sid that names no service in this list, which
-  // is the condition that clause actually describes.
-  if (!svc) return res.status(404).type('xml').send(emptyTVAMain(config));
-  if (!progs?.length) return res.type('xml').send(emptyTVAMain(config));
-  const sched = buildSchedule(progs);
+function tvaMain(cfg, body) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<TVAMain xmlns="urn:tva:metadata:2024" xmlns:mpeg7="urn:tva:mpeg7:2008" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:tva="urn:tva:metadata:2024" xml:lang="${xe(cfg.listLang || 'en')}">
+  <ProgramDescription>${body}
+  </ProgramDescription>
+</TVAMain>`;
+}
 
-  // Build series CRIDs for GroupInformation/MemberOf (TS 103 770 §6.10.17)
-  const seriesCrids = {};
-  let _sIdx = 0;
-  for (const p of progs) {
-    if (!p.seriesTitle) continue;
-    const key = `${p.seriesTitle}::${p.seriesNumber || ''}`;
-    if (!seriesCrids[key]) seriesCrids[key] = `crid://dvbi.example.com/2024/series/${++_sIdx}`;
-  }
+// Clauses 6.5.2.2 and 6.6.2: an unknown Service ID or CRID is answered 200 with both tables empty.
+const emptyTables = cfg => tvaMain(cfg, `
+    <ProgramInformationTable/>
+    <ProgramLocationTable/>`);
 
-  // No image variants exist here, so a request naming one gets no programme image (clause 5.2.8.2.1).
-  const progInfo = sched.map(p => {
-    const imgEl = p.image && !req.query.image_variant
-      ? `\n        <RelatedMaterial>
+// ProgramInformation for one event (tables 41 and 42). memberOf adds the now/next structural
+// group of clause 6.5.4.4; imageVariant drops the image, since no image variants exist here.
+function programInformation(svc, ev, seriesCrids, { memberOf, imageVariant } = {}) {
+  // Table 59, row MediaLocator: "At least one image shall be provided with the Media Type
+  // image/jpeg or image/png", so a programme's single image is signalled only when it is one of those.
+  const imgType = ev.image ? detectMimeType(ev.image) : null;
+  const imgEl = !imageVariant && (imgType === 'image/jpeg' || imgType === 'image/png')
+    ? `\n        <RelatedMaterial>
           <HowRelated href="urn:tva:metadata:cs:HowRelatedCS:2012:19"/>
-          <MediaLocator><MediaUri>${xe(p.image)}</MediaUri></MediaLocator>
+          <MediaLocator><MediaUri contentType="${imgType}">${xe(ev.image)}</MediaUri></MediaLocator>
         </RelatedMaterial>` : '';
-    const pgEl = p.parentalAge != null && p.parentalAge !== ''
-      ? `\n        <ParentalGuidance><mpeg7:MinimumAge>${xe(String(p.parentalAge))}</mpeg7:MinimumAge></ParentalGuidance>` : '';
-    // MemberOf replaces flat SeriesNumber/EpisodeNumber/SeriesTitle per TS 103 770 §6.10.17
-    let memberOfEl = '';
-    if (p.seriesTitle) {
-      const key  = `${p.seriesTitle}::${p.seriesNumber || ''}`;
-      const crid = seriesCrids[key];
-      const idxA = (p.episodeNumber != null && p.episodeNumber !== '') ? ` index="${xe(String(p.episodeNumber))}"` : '';
-      // MemberOf is a child of ProgramInformation (after BasicDescription), not of BasicDescription
-      memberOfEl = `\n      <MemberOf crid="${xe(crid)}"${idxA}/>`;
-    }
-    // In TVAMain the default namespace IS urn:tva:metadata:2024, so Name takes no prefix
-    // (the tva: prefix is only declared in the service list, not here)
-    const genreEl = p.genre
-      ? `\n        <Genre href="${GENRE_CS[p.genre] || GENRE_CS_DEFAULT}"><Name xml:lang="en">${xe(GENRE_LABEL[p.genre] || p.genre)}</Name></Genre>` : '';
-    // BasicContentDescriptionType sequence: Title, Synopsis, ..., Genre, ParentalGuidance, ..., RelatedMaterial.
-    // MemberOf is moved out to be a ProgramInformation child after BasicDescription.
-    return `
-    <ProgramInformation programId="crid://dvbi.example.com/2024/prog/${p.progIdx}">
+  const pgEl = ev.parentalAge != null && ev.parentalAge !== ''
+    ? `\n        <ParentalGuidance><mpeg7:MinimumAge>${xe(String(ev.parentalAge))}</mpeg7:MinimumAge></ParentalGuidance>` : '';
+  // In TVAMain the default namespace IS urn:tva:metadata:2024, so Name takes no prefix
+  const genreEl = ev.genre
+    ? `\n        <Genre href="${GENRE_CS[ev.genre] || GENRE_CS_DEFAULT}"><Name xml:lang="en">${xe(GENRE_LABEL[ev.genre] || ev.genre)}</Name></Genre>` : '';
+  // MemberOf is a child of ProgramInformation (after BasicDescription), not of BasicDescription.
+  // Table 41, row MemberOf: "The @xsi:type attribute shall always be set to MemberOfType."
+  const members = [];
+  if (memberOf) members.push(memberOf);
+  if (ev.seriesTitle) {
+    const crid = seriesCrids[`${ev.seriesTitle}::${ev.seriesNumber || ''}`];
+    const index = (ev.episodeNumber != null && ev.episodeNumber !== '') ? ev.episodeNumber : null;
+    members.push({ crid, index });
+  }
+  const memberEls = members.map(m =>
+    `\n      <MemberOf xsi:type="MemberOfType" crid="${xe(m.crid)}"${m.index != null ? ` index="${xe(String(m.index))}"` : ''}/>`).join('');
+  // Table 42: Title at most 80 characters; Synopsis "A minimum of one synopsis shall be provided and
+  // this shall have the @length attribute of medium." Both lengths are enforced on save (guideProblem).
+  // BasicContentDescriptionType sequence: Title, Synopsis, ..., Genre, ParentalGuidance, ..., RelatedMaterial.
+  return `
+    <ProgramInformation programId="${xe(eventCrid(svc, ev))}">
       <BasicDescription>
-        <Title type="main">${xe(p.title)}</Title>
-        <Synopsis length="short">${xe(p.desc)}</Synopsis>${genreEl}${pgEl}${imgEl}
-      </BasicDescription>${memberOfEl}
+        <Title type="main">${xe(ev.title)}</Title>
+        <Synopsis length="medium">${xe(ev.desc)}</Synopsis>${genreEl}${pgEl}${imgEl}
+      </BasicDescription>${memberEls}
     </ProgramInformation>`;
-  }).join('');
+}
 
-  // GroupInformationTable for series referenced via MemberOf
+function scheduleEvent(svc, ev, nowMs) {
+  // Emit ActualStartTime/ActualEndTime for events that have started (A184r2 §4.5)
+  // For generated schedules, actuals equal published values (no real broadcast delay to model)
+  const actualEl = ev.startMs <= nowMs
+    ? `\n        <ActualStartTime>${new Date(ev.startMs).toISOString()}</ActualStartTime>
+        <ActualEndTime>${new Date(ev.endMs).toISOString()}</ActualEndTime>` : '';
+  return `
+      <ScheduleEvent>
+        <Program crid="${xe(eventCrid(svc, ev))}"/>
+        <PublishedStartTime>${new Date(ev.startMs).toISOString()}</PublishedStartTime>
+        <PublishedDuration>${msDur(ev.durMs)}</PublishedDuration>${actualEl}
+      </ScheduleEvent>`;
+}
+
+// OnDemandProgram for an event with a catch-up URL (table 52). @serviceIDRef is the identifier the
+// request used. Table 62: two availability Genre terms, from MediaAvailabilityCS (table 70) and
+// FEPGAvailabilityCS (table 71), "The default values shall be media_unavailable and fepg_unavailable."
+// Media is available between StartOfAvailability and EndOfAvailability; nothing here says an
+// on-demand item is offered in the forwards EPG, so that one stays at its default.
+function onDemandProgram(svc, ev, serviceIDRef, nowMs) {
+  const startAvail = ev.startMs;
+  const endAvail   = ev.endMs + 30 * 86400000;
+  const media = nowMs >= startAvail && nowMs < endAvail ? 'media_available' : 'media_unavailable';
+  return `
+      <OnDemandProgram serviceIDRef="${xe(serviceIDRef)}">
+        <Program crid="${xe(eventCrid(svc, ev))}"/>
+        <ProgramURL>${xe(ev.catchupUrl)}</ProgramURL>
+        <InstanceDescription>
+          <Genre type="other" href="urn:fvc:metadata:cs:MediaAvailabilityCS:2014-07:${media}"/>
+          <Genre type="other" href="urn:fvc:metadata:cs:FEPGAvailabilityCS:2014-10:fepg_unavailable"/>
+        </InstanceDescription>
+        <PublishedDuration>${msDur(ev.durMs)}</PublishedDuration>
+        <StartOfAvailability>${new Date(startAvail).toISOString()}</StartOfAvailability>
+        <EndOfAvailability>${new Date(endAvail).toISOString()}</EndOfAvailability>
+        <DeliveryMode>streaming</DeliveryMode>
+        <Free value="true"/>
+      </OnDemandProgram>`;
+}
+
+// Clause 6.5.2.1 limits for start and end. The permitted times of day are those whose Unix time is
+// a whole multiple of 10 800, so days are UTC days. Returns null for a request that breaks any of
+// them: "a Content Guide Server shall return a 400 (Bad Request) HTTP response status".
+const SLOT_S = 10800, DAY_S = 86400;
+function scheduleWindow(query, nowMs) {
+  const s = query.start, e = query.end;
+  if (typeof s !== 'string' || typeof e !== 'string' || !/^\d+$/.test(s) || !/^\d+$/.test(e)) return null;
+  const start = Number(s), end = Number(e);
+  const midnight = Math.floor(nowMs / 1000 / DAY_S) * DAY_S;
+  if (start % SLOT_S || end % SLOT_S) return null;
+  if (end - start !== 21600 && end - start !== 43200) return null;
+  if (start < midnight - 28 * DAY_S) return null;
+  if (end > midnight + DAY_S + 28 * DAY_S) return null;
+  return { fromMs: start * 1000, toMs: end * 1000 };
+}
+
+// Now/next groups (clause 6.5.4.4, table 64).
+const NOW_NEXT = 'crid://dvb.org/metadata/schedules/now-next';
+const NOW_NEXT_MAX = 10;
+
+function nowNextResponse(cfg, svc, sid, kind, nowMs, imageVariant) {
+  const maxDur = Math.max(...svc.epgPrograms.map(p => Number(p.dur) * 60000).filter(d => d > 0));
+  const span = (NOW_NEXT_MAX + 1) * maxDur;
+  const evs = buildSchedule(svc.epgPrograms, nowMs - span, nowMs + span);
+  const cur = evs.findIndex(e => e.startMs <= nowMs && e.endMs > nowMs);
+  if (cur < 0) return null;
+  const later = kind === 'window' ? NOW_NEXT_MAX : 1;
+  const earlier = kind === 'window' ? NOW_NEXT_MAX : 0;
+  const picked = [
+    ...evs.slice(Math.max(0, cur - earlier), cur).reverse().map((ev, i) => ({ ev, group: 'earlier', index: i + 1 })),
+    { ev: evs[cur], group: 'now', index: 1 },
+    ...evs.slice(cur + 1, cur + 1 + later).map((ev, i) => ({ ev, group: 'later', index: i + 1 })),
+  ];
+  const seriesCrids = seriesCridsOf(svc.epgPrograms);
+  const inOrder = picked.slice().sort((a, b) => a.ev.startMs - b.ev.startMs);
+  const progInfo = inOrder.map(x => programInformation(svc, x.ev, seriesCrids,
+    { memberOf: { crid: `${NOW_NEXT}/${x.group}`, index: x.index }, imageVariant })).join('');
+  const groups = ['earlier', 'now', 'later'].map(g => [g, picked.filter(x => x.group === g).length])
+    .filter(([, n]) => n > 0)
+    .map(([g, n]) => `
+    <GroupInformation groupId="${NOW_NEXT}/${g}" ordered="true" numOfItems="${n}">
+      <GroupType xsi:type="ProgramGroupTypeType" value="otherCollection"/>
+      <BasicDescription/>
+    </GroupInformation>`).join('');
+  const ondemand = inOrder.filter(x => x.ev.catchupUrl).map(x => onDemandProgram(svc, x.ev, sid, nowMs)).join('');
+  return tvaMain(cfg, `
+    <ProgramInformationTable>${progInfo}
+    </ProgramInformationTable>
+    <GroupInformationTable>${groups}
+    </GroupInformationTable>
+    <ProgramLocationTable>
+      <Schedule serviceIDRef="${xe(sid)}" start="${new Date(inOrder[0].ev.startMs).toISOString()}" end="${new Date(inOrder[inOrder.length - 1].ev.endMs).toISOString()}">${inOrder.map(x => scheduleEvent(svc, x.ev, nowMs)).join('')}
+      </Schedule>${ondemand}
+    </ProgramLocationTable>`);
+}
+
+function timestampResponse(cfg, svc, sid, win, nowMs, imageVariant) {
+  // Clause 6.5.2.1: only events with PublishedStartTime at or after start and before end.
+  const evs = buildSchedule(svc.epgPrograms, win.fromMs, win.toMs).filter(e => e.startMs >= win.fromMs);
+  if (!evs.length) return null;
+  const seriesCrids = seriesCridsOf(svc.epgPrograms);
+  const progInfo = evs.map(ev => programInformation(svc, ev, seriesCrids, { imageVariant })).join('');
+  // GroupInformationType sequence: GroupType first, then BasicDescription. GroupType is an abstract
+  // type, so it needs xsi:type naming the concrete ProgramGroupTypeType, which carries @value (not @href).
   const groupInfoItems = Object.entries(seriesCrids).map(([key, crid]) => {
     const sep    = key.lastIndexOf('::');
     const sTitle = key.slice(0, sep);
     const sNum   = key.slice(sep + 2);
     const seasonLabel = sNum ? ` (Season ${sNum})` : '';
-    // GroupInformationType sequence: GroupType first, then BasicDescription. GroupType is an abstract
-    // type, so it needs xsi:type naming the concrete ProgramGroupTypeType, which carries @value (not @href).
     return `
     <GroupInformation groupId="${xe(crid)}" ordered="true">
       <GroupType xsi:type="tva:ProgramGroupTypeType" value="series"/>
@@ -1000,109 +1149,72 @@ app.get('/epg/schedule', (req, res) => {
   const groupInfoTableEl = groupInfoItems ? `
     <GroupInformationTable>${groupInfoItems}
     </GroupInformationTable>` : '';
-
-  const catchupEvents = sched.filter(p => p.catchupUrl);
-  // OnDemandProgram full structure per TS 103 770 §6.10.8.2
-  const catchupPrograms = catchupEvents.map(p => {
-    const startAvail = new Date(p.startMs).toISOString();
-    const endAvail   = new Date(p.endMs + 30 * 86400000).toISOString();
-    return `
-      <OnDemandProgram>
-        <Program crid="crid://dvbi.example.com/2024/prog/${p.progIdx}"/>
-        <ProgramURL>${xe(p.catchupUrl)}</ProgramURL>
-        <InstanceDescription/>
-        <PublishedDuration>${msDur(p.durMs)}</PublishedDuration>
-        <StartOfAvailability>${startAvail}</StartOfAvailability>
-        <EndOfAvailability>${endAvail}</EndOfAvailability>
-        <DeliveryMode>streaming</DeliveryMode>
-        <Free value="true"/>
-      </OnDemandProgram>`;
-  }).join('');
-
-  const nowMs = Date.now();
-  const schedEvents = sched.map(p => {
-    // Emit ActualStartTime/ActualEndTime for events that have started (A184r2 §4.5)
-    // For generated schedules, actuals equal published values (no real broadcast delay to model)
-    const actualEl = p.startMs <= nowMs
-      ? `\n        <ActualStartTime>${new Date(p.startMs).toISOString()}</ActualStartTime>
-        <ActualEndTime>${new Date(p.endMs).toISOString()}</ActualEndTime>` : '';
-    return `
-      <ScheduleEvent>
-        <Program crid="crid://dvbi.example.com/2024/prog/${p.progIdx}"/>
-        <PublishedStartTime>${new Date(p.startMs).toISOString()}</PublishedStartTime>
-        <PublishedDuration>${msDur(p.durMs)}</PublishedDuration>${actualEl}
-      </ScheduleEvent>`;
-  }).join('');
-
-  res.type('xml').send(`<?xml version="1.0" encoding="UTF-8"?>
-<TVAMain xmlns="urn:tva:metadata:2024" xmlns:mpeg7="urn:tva:mpeg7:2008" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:tva="urn:tva:metadata:2024" xml:lang="en">
-  <ProgramDescription>
+  const ondemand = evs.filter(ev => ev.catchupUrl).map(ev => onDemandProgram(svc, ev, sid, nowMs)).join('');
+  return tvaMain(cfg, `
     <ProgramInformationTable>${progInfo}
     </ProgramInformationTable>${groupInfoTableEl}
     <ProgramLocationTable>
-      <Schedule serviceIDRef="${xe(serviceId)}"
-                start="${new Date(sched[0].startMs).toISOString()}"
-                end="${new Date(sched[sched.length - 1].endMs).toISOString()}">
-        ${schedEvents}
-      </Schedule>${catchupPrograms ? '\n' + catchupPrograms : ''}
-    </ProgramLocationTable>
-  </ProgramDescription>
-</TVAMain>`);
+      <Schedule serviceIDRef="${xe(sid)}" start="${new Date(evs[0].startMs).toISOString()}" end="${new Date(evs[evs.length - 1].endMs).toISOString()}">${evs.map(ev => scheduleEvent(svc, ev, nowMs)).join('')}
+      </Schedule>${ondemand}
+    </ProgramLocationTable>`);
+}
+
+// ScheduleInfoEndpoint (clauses 6.5.2 and 6.5.3). sid is the service's UniqueIdentifier: the list
+// carries no ContentGuideServiceRef, so that is the identifier clients query with.
+function scheduleDocument(cfg, query, nowMs, nowNextDefault = null) {
+  const sid = query.sid || query.serviceId;
+  const imageVariant = query.image_variant || null;
+  const kind = query.now_next || nowNextDefault;
+  const nowNext = kind === 'true' || kind === 'window';
+  const win = nowNext ? null : scheduleWindow(query, nowMs);
+  if (!nowNext && !win) return { status: 400, xml: emptyTVAMain(cfg) };
+  const svc = typeof sid === 'string' ? cfg.services.find(s => s.uid === sid) : null;
+  if (!svc) return { status: 200, xml: emptyTables(cfg) };
+  // A service that exists but carries no programmes, or none in the window, is not an error and is
+  // answered 200: per TS 103 770 V1.2.1 clause 4.3.3.4, a 404 from a ContentGuideSource API URL
+  // makes the client re-acquire the whole Service List. Clause 6.5.4.1 asks for an empty Schedule
+  // element here, which the attached TV-Anytime schema rejects (ScheduleEvent is required), so the
+  // response stays the empty document.
+  const body = svc.epgPrograms?.length
+    ? (nowNext ? nowNextResponse(cfg, svc, sid, kind, nowMs, imageVariant)
+               : timestampResponse(cfg, svc, sid, win, nowMs, imageVariant))
+    : null;
+  return { status: 200, xml: body || emptyTVAMain(cfg) };
+}
+
+app.get('/epg/schedule', (req, res) => {
+  const { status, xml } = scheduleDocument(config, req.query, Date.now());
+  res.status(status).type('xml').send(xml);
 });
 
 // ── EPG now/next (TS 103 770 §6.5.3) ────────────────────────────────────────────────────
 
+// Not an endpoint the service list signals: now/next is a request to the ScheduleInfoEndpoint
+// (clause 6.5.3.1). Kept for direct callers, answered as now_next=true by default.
 app.get('/epg/nownext', (req, res) => {
-  const serviceId = req.query.sid || req.query.serviceId;
-  const svc   = config.services.find(s => s.uid === serviceId);
-  const progs = svc?.epgPrograms;
-  // Same split as /epg/schedule above: unknown service is 404, known service with nothing to
-  // announce is an empty document with 200.
-  if (!svc) return res.status(404).type('xml').send(emptyTVAMain(config));
-  if (!progs?.length) return res.type('xml').send(emptyTVAMain(config));
-  const sched = buildSchedule(progs);
-  const now   = Date.now();
-  const curIdx = sched.findIndex(p => p.startMs <= now && p.endMs > now);
-  const toEmit = curIdx >= 0 ? sched.slice(curIdx, curIdx + 2) : sched.slice(0, 1);
-  if (!toEmit.length) return res.type('xml').send(emptyTVAMain(config));
-  const progInfo2 = toEmit.map(p => {
-    const pgEl = p.parentalAge != null && p.parentalAge !== ''
-      ? `\n        <ParentalGuidance><mpeg7:MinimumAge>${xe(String(p.parentalAge))}</mpeg7:MinimumAge></ParentalGuidance>` : '';
-    return `
-    <ProgramInformation programId="crid://dvbi.example.com/2024/prog/${p.progIdx}">
-      <BasicDescription>
-        <Title type="main">${xe(p.title)}</Title>
-        <Synopsis length="short">${xe(p.desc)}</Synopsis>${pgEl}
-      </BasicDescription>
-    </ProgramInformation>`;
-  }).join('');
-  const nowMs2 = Date.now();
-  const schedEvents2 = toEmit.map(p => {
-    const actualEl2 = p.startMs <= nowMs2
-      ? `\n        <ActualStartTime>${new Date(p.startMs).toISOString()}</ActualStartTime>
-        <ActualEndTime>${new Date(p.endMs).toISOString()}</ActualEndTime>` : '';
-    return `
-      <ScheduleEvent>
-        <Program crid="crid://dvbi.example.com/2024/prog/${p.progIdx}"/>
-        <PublishedStartTime>${new Date(p.startMs).toISOString()}</PublishedStartTime>
-        <PublishedDuration>${msDur(p.durMs)}</PublishedDuration>${actualEl2}
-      </ScheduleEvent>`;
-  }).join('');
-  res.type('xml').send(`<?xml version="1.0" encoding="UTF-8"?>
-<TVAMain xmlns="urn:tva:metadata:2024" xmlns:mpeg7="urn:tva:mpeg7:2008" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:tva="urn:tva:metadata:2024" xml:lang="en">
-  <ProgramDescription>
-    <ProgramInformationTable>${progInfo2}
-    </ProgramInformationTable>
-    <ProgramLocationTable>
-      <Schedule serviceIDRef="${xe(serviceId)}"
-                start="${new Date(toEmit[0].startMs).toISOString()}"
-                end="${new Date(toEmit[toEmit.length - 1].endMs).toISOString()}">
-${schedEvents2}
-      </Schedule>
-    </ProgramLocationTable>
-  </ProgramDescription>
-</TVAMain>`);
+  const { status, xml } = scheduleDocument(config, req.query, Date.now(), 'true');
+  res.status(status).type('xml').send(xml);
 });
+
+// ── EPG programme information (TS 103 770 §6.6) ─────────────────────────────────────────
+
+// ProgramInfoEndpoint: one programme by its CRID. Clause 6.6.2: "In the case where the CRID is not
+// known to a Content Guide Server then a 200 (OK) HTTP response shall be returned but the
+// ProgramInformationTable and ProgramLocationTable shall not contain any elements."
+function programDocument(cfg, query, nowMs) {
+  const found = typeof query.pid === 'string' ? eventFromCrid(cfg, query.pid) : null;
+  if (!found) return emptyTables(cfg);
+  const { svc, ev } = found;
+  const pi = programInformation(svc, ev, seriesCridsOf(svc.epgPrograms), { imageVariant: query.image_variant || null });
+  const od = ev.catchupUrl ? onDemandProgram(svc, ev, svc.uid, nowMs) : '';
+  return tvaMain(cfg, `
+    <ProgramInformationTable>${pi}
+    </ProgramInformationTable>
+    <ProgramLocationTable>${od}
+    </ProgramLocationTable>`);
+}
+
+app.get('/epg/program', (req, res) => res.type('xml').send(programDocument(config, req.query, Date.now())));
 
 // ── Admin API ─────────────────────────────────────────────────────────────────
 
@@ -1352,4 +1464,7 @@ function startServer() {
 // Only listen when run directly; when required (e.g. by the XSD test) just export the builders.
 if (require.main === module) startServer();
 
-module.exports = { app, startServer, buildServiceList, buildSchedule, msDur, cgsidProblem, mbmsLocatorProblem };
+module.exports = {
+  app, startServer, buildServiceList, buildSchedule, msDur, cgsidProblem, mbmsLocatorProblem,
+  scheduleDocument, programDocument,
+};

@@ -190,6 +190,16 @@ where wrong:
 - **Region `@countryCodes` is checked for format only.** It is the list's configured target country
   (`[A-Z]{3}`, comma-separated), required on publish when services have target regions; whether a
   code is assigned in ISO 3166 is not checked.
+- **`OnDemandProgram/ProgramURL` is the catch-up stream URL, not a deep-linked XML AIT.** ETSI
+  TS 103 770 V1.2.1 table 52 requires "A URL location of a content deep-linked XML AIT for the
+  on-demand programme" with `@contentType` `application/vnd.dvb.ait+xml`. An XML AIT names a player
+  application (its `orgId` and `appId`, application type, platform profile from ETSI TS 102 796, and
+  the `URLBase` and `applicationLocation` it launches at); this provider configures none of these,
+  so no valid one can be generated and the element is left as it was.
+- **A known service with no event in the requested period gets an empty TV-Anytime document.**
+  Clause 6.5.4.1 asks for "an empty Schedule element", but `tva_metadata_3-1.xsd`, attached to the
+  same specification, requires at least one `ScheduleEvent` in a `Schedule`. The two cannot both be
+  met; the behaviour is unchanged until that is resolved.
 - **A service without a JPEG or PNG logo is published without a logo.** Clause 5.2.6.2 requires at
   least one logo of those types; the generated letter placeholder is SVG, so it is shown in the
   editor but not signalled in the list. Uploads are limited to PNG and JPEG.
@@ -197,7 +207,7 @@ where wrong:
 - **An existing `@CGSID` that `xs:ID` forbids is not migrated.** A write that would introduce one
   is now rejected with a message naming the value and the rule, but a list that already carries a
   bad identifier still loads, with a warning at startup. It is not rewritten silently, because
-  every `ContentGuideServiceRef` pointing at it would break; correcting it is the operator's call.
+  every `ContentGuideSourceRef` pointing at it would break; correcting it is the operator's call.
 - **Two moderate dependency advisories remain open, and cannot be closed without a breaking
   upgrade.** Express 4.22.2 pins `qs` to `~6.15.1`; the advisories are fixed in `qs` 6.16.0, which
   that range excludes, and 4.22.2 is the last release of the 4.x line. Only Express 5 resolves it.

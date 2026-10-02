@@ -100,14 +100,19 @@ test('msDur: converts milliseconds to xs:duration', () => {
 
 test('buildSchedule: produces contiguous, non-overlapping events cycling through programmes', () => {
   const progs = [{ dur: 30 }, { dur: 60 }];
-  const items = buildSchedule(progs);
+  const from = Date.UTC(2026, 9, 2, 12), to = from + 10 * 3600000;
+  const items = buildSchedule(progs, from, to);
   assert.ok(items.length > 2, 'should generate multiple cycles across the 10h window');
+  assert.ok(items[0].startMs <= from && items[0].endMs > from, 'the first event overlaps the window start');
+  assert.ok(items[items.length - 1].startMs < to);
   for (let i = 1; i < items.length; i++) {
     assert.equal(items[i].startMs, items[i - 1].endMs, `event ${i} must start exactly when ${i - 1} ends`);
+    assert.equal(items[i].progIdx, (items[i - 1].progIdx + 1) % 2, 'progIdx must cycle through the programmes');
   }
-  assert.equal(items[0].progIdx, 0);
-  assert.equal(items[1].progIdx, 1);
-  assert.equal(items[2].progIdx, 0, 'progIdx must cycle back to the first programme');
+  const later = buildSchedule(progs, from + 3600000, to);
+  assert.ok(later.every(e => items.some(x => x.startMs === e.startMs && x.progIdx === e.progIdx)),
+    'the same instant falls in the same event whichever window is asked for');
+  assert.deepEqual(buildSchedule([{ dur: 0 }], from, to), [], 'no programme with a duration, no events');
 });
 
 function sampleConfig(overrides = {}) {
@@ -468,7 +473,7 @@ test('image_variant outside table 8 is answered 400 on every endpoint (clause 5.
   const cfg = sampleConfig({ epgPrograms: [{ title: 'T', dur: 60, desc: 'D', image: 'https://img.example.com/p.jpg' }] });
   assert.equal((await putConfig(base, cfg)).status, 200);
   const sid = encodeURIComponent(cfg.services[0].uid);
-  for (const p of ['/service-list.xml', '/logos/svc-a', `/epg/schedule?sid=${sid}`, '/5gmag.png']) {
+  for (const p of ['/service-list.xml', '/logos/svc-a', `/epg/schedule?sid=${sid}&now_next=true`, '/5gmag.png']) {
     const sep = p.includes('?') ? '&' : '?';
     for (const bad of ['16x9', 'SQUARE_COLOUR', '', 'square_colour&image_variant=4x3_colour']) {
       const res = await fetch(`${base}${p}${sep}image_variant=${bad}`);
@@ -486,8 +491,11 @@ test('a requested image variant that does not exist returns no image for the ite
     .find('//d:Service/d:RelatedMaterial', NS).length;
   assert.equal(await logos(''), 1, 'the default logo without a variant');
   assert.equal(await logos('?image_variant=16x9_white'), 0);
-  const sched = await (await fetch(`${base}/epg/schedule?sid=${encodeURIComponent(cfg.services[0].uid)}&image_variant=16x9_white`)).text();
-  assert.equal(parse(sched).find('//tva:RelatedMaterial', NS).length, 0);
+  const sched = q => fetch(`${base}/epg/schedule?sid=${encodeURIComponent(cfg.services[0].uid)}&now_next=true${q}`)
+    .then(async r => parse(await r.text()));
+  assert.ok((await sched('')).find('//tva:ProgramInformation', NS).length > 0);
+  assert.ok((await sched('')).find('//tva:RelatedMaterial', NS).length > 0, 'the default image without a variant');
+  assert.equal((await sched('&image_variant=16x9_white')).find('//tva:RelatedMaterial', NS).length, 0);
 }));
 
 test('PUT /api/config refuses a service name language that is empty or used twice (clause 5.2.10)', () => withServer(async base => {
@@ -567,4 +575,206 @@ test('Server-side Region Selection by regionID with @responseStatus (clauses 5.6
 
   assert.equal(status(await get('?region=')).value(), 'ERROR_INVALID_REQUEST');
   assert.equal(status(await get('?region=GBR-SCT&region=GBR-ENG')).value(), 'ERROR_INVALID_REQUEST');
+}));
+
+// ── Content guide (TS 103 770 V1.2.1 clauses 6.1, 6.5.2, 6.5.3, 6.5.4, 6.6, 6.10)
+
+const { scheduleDocument, programDocument } = require('../server.js');
+const TNS = { t: 'urn:tva:metadata:2024', xsi: 'http://www.w3.org/2001/XMLSchema-instance' };
+// 12:00 UTC on a fixed day, so every window below is computed from a known "now".
+const NOW = Date.UTC(2026, 9, 2, 12, 10);
+const MIDNIGHT_S = Date.UTC(2026, 9, 2) / 1000;
+
+function guideConfig() {
+  return sampleConfig({ epgPrograms: [
+    { title: 'Morning News', dur: 60, desc: 'Headlines', genre: 'news', parentalAge: 12, seriesTitle: 'Daily',
+      seriesNumber: 1, episodeNumber: 3, image: 'https://img.example.com/news.jpg', catchupUrl: 'https://vod.example.com/news' },
+    { title: 'Weather', dur: 30, desc: 'Forecast', image: 'https://img.example.com/w.webp' },
+  ] });
+}
+const sid = 'tag:test,2024:service:a';
+const sched = (q, cfg = guideConfig()) => scheduleDocument(cfg, { sid, ...q }, NOW);
+
+test('service refers to its content guide source with ContentGuideSourceRef, and is queried by UniqueIdentifier (clause 6.1)', () => withServer(async base => {
+  const cfg = guideConfig();
+  cfg.services.push({ ...JSON.parse(JSON.stringify(cfg.services[0])), id: 'svc-x', uid: 'tag:test,2024:service:x',
+    lcn: 9, customEpgUrl: 'https://epg.example.com/x' });
+  const doc = parse(buildServiceList('http://x', cfg));
+  const cgsids = doc.find('//d:ContentGuideSourceList/d:ContentGuideSource', NS).map(e => e.attr('CGSID').value());
+  const refs = doc.find('//d:Service/d:ContentGuideSourceRef', NS).map(e => e.text());
+  assert.deepEqual(refs, ['epg-1', 'epg-svc-x']);
+  assert.ok(refs.every(r => cgsids.includes(r)), 'every reference matches a CGSID');
+  assert.equal(doc.find('//d:ContentGuideServiceRef', NS).length, 0, 'no identifier the guide does not answer to');
+  assert.match(doc.get('//d:ContentGuideSource[@CGSID="epg-1"]/d:ProgramInfoEndpoint/dvbisd-t:URI',
+    { ...NS, 'dvbisd-t': 'urn:dvb:metadata:servicediscovery-types:2023' }).text(), /\/epg\/program$/);
+
+  assert.equal((await putConfig(base, guideConfig())).status, 200);
+  const uid = parse(await (await fetch(`${base}/service-list.xml`)).text()).get('//d:Service/d:UniqueIdentifier', NS).text();
+  const res = await fetch(`${base}/epg/schedule?sid=${encodeURIComponent(uid)}&now_next=true`);
+  assert.equal(res.status, 200);
+  assert.ok(parse(await res.text()).find('//t:ScheduleEvent', TNS).length > 0);
+}));
+
+test('timestamp schedule request: start and end filter the events (clause 6.5.2.1)', () => {
+  const start = MIDNIGHT_S + 4 * 10800, end = start + 21600;
+  const { status, xml } = sched({ start: String(start), end: String(end) });
+  assert.equal(status, 200);
+  const doc = parse(xml);
+  const starts = doc.find('//t:ScheduleEvent/t:PublishedStartTime', TNS).map(e => Date.parse(e.text()) / 1000);
+  assert.ok(starts.length >= 6);
+  assert.ok(starts.every(t => t >= start && t < end), 'only events starting in [start, end)');
+  assert.equal(doc.get('//t:Schedule', TNS).attr('serviceIDRef').value(), sid);
+  const twelve = parse(sched({ start: String(start), end: String(start + 43200) }).xml);
+  assert.ok(twelve.find('//t:ScheduleEvent', TNS).length > starts.length, '12 hour span');
+});
+
+test('timestamp schedule request: 400 for a missing, invalid or out-of-range start or end (clause 6.5.2.1)', () => {
+  const s = MIDNIGHT_S + 4 * 10800;
+  for (const [q, why] of [
+    [{}, 'neither'], [{ start: String(s) }, 'no end'], [{ end: String(s + 21600) }, 'no start'],
+    [{ start: 'abc', end: String(s + 21600) }, 'not a timestamp'],
+    [{ start: String(s + 3600), end: String(s + 3600 + 21600) }, 'not a multiple of 10 800'],
+    [{ start: String(s), end: String(s + 10800) }, '3 hours'],
+    [{ start: String(s), end: String(s + 32400) }, '9 hours'],
+    [{ start: String(MIDNIGHT_S - 28 * 86400 - 10800), end: String(MIDNIGHT_S - 28 * 86400 + 10800) }, 'before -28 days'],
+    [{ start: String(MIDNIGHT_S + 29 * 86400 - 10800), end: String(MIDNIGHT_S + 29 * 86400 + 10800) }, 'after +28 days'],
+    [{ now_next: 'yes' }, 'now_next neither true nor window'],
+  ]) assert.equal(sched(q).status, 400, why);
+  assert.equal(sched({ start: String(MIDNIGHT_S - 28 * 86400), end: String(MIDNIGHT_S - 28 * 86400 + 21600) }).status, 200, 'earliest start');
+  assert.equal(sched({ start: String(MIDNIGHT_S + 29 * 86400 - 21600), end: String(MIDNIGHT_S + 29 * 86400) }).status, 200, 'latest end');
+});
+
+test('unknown Service ID is answered 200 with empty ProgramInformationTable and ProgramLocationTable (clause 6.5.2.2)', () => withServer(async base => {
+  for (const q of [`start=${MIDNIGHT_S}&end=${MIDNIGHT_S + 21600}`, 'now_next=true']) {
+    const res = await fetch(`${base}/epg/schedule?sid=no-such-service&${q}`);
+    assert.equal(res.status, 200, q);
+    const doc = parse(await res.text());
+    assert.equal(doc.find('//t:ProgramInformationTable', TNS).length, 1);
+    assert.equal(doc.find('//t:ProgramLocationTable', TNS).length, 1);
+    assert.equal(doc.find('//t:ProgramInformationTable/*|//t:ProgramLocationTable/*', TNS).length, 0);
+  }
+}));
+
+test('every event in the ProgramLocationTable has its ProgramInformation, and only those (clause 6.5.4.1)', () => {
+  for (const q of [{ start: String(MIDNIGHT_S + 4 * 10800), end: String(MIDNIGHT_S + 6 * 10800) }, { now_next: 'window' }]) {
+    const doc = parse(sched(q).xml);
+    const pis = doc.find('//t:ProgramInformation', TNS).map(e => e.attr('programId').value()).sort();
+    const evs = doc.find('//t:ScheduleEvent/t:Program', TNS).map(e => e.attr('crid').value()).sort();
+    assert.deepEqual(pis, evs);
+    assert.equal(new Set(pis).size, pis.length, 'one ProgramInformation per event');
+  }
+});
+
+test('now_next=true: the on-air event and the next one, in the now and later groups (clauses 6.5.3.1, 6.5.4.4)', () => {
+  const doc = parse(sched({ now_next: 'true' }).xml);
+  const member = g => doc.find(`//t:ProgramInformation/t:MemberOf[@crid="crid://dvb.org/metadata/schedules/now-next/${g}"]`, TNS);
+  assert.equal(member('now').length, 1);
+  assert.equal(member('now')[0].attr('index').value(), '1');
+  assert.equal(member('later').length, 1);
+  assert.equal(member('later')[0].attr('index').value(), '1');
+  assert.equal(member('earlier').length, 0);
+  const groups = doc.find('//t:GroupInformationTable/t:GroupInformation', TNS);
+  assert.deepEqual(groups.map(g => [g.attr('groupId').value(), g.attr('numOfItems').value(), g.attr('ordered').value()]), [
+    ['crid://dvb.org/metadata/schedules/now-next/now', '1', 'true'],
+    ['crid://dvb.org/metadata/schedules/now-next/later', '1', 'true'],
+  ]);
+  for (const g of groups) {
+    assert.equal(g.get('./t:GroupType/@xsi:type', TNS).value(), 'ProgramGroupTypeType');
+    assert.equal(g.get('./t:GroupType', TNS).attr('value').value(), 'otherCollection');
+  }
+  const ev = doc.find('//t:ScheduleEvent/t:PublishedStartTime', TNS).map(e => Date.parse(e.text()));
+  assert.ok(ev[0] <= NOW, 'the first event is on air');
+});
+
+test('now_next=window: up to ten earlier and ten later events, ordered by @index (clause 6.5.4.4)', () => {
+  const doc = parse(sched({ now_next: 'window' }).xml);
+  const byGroup = g => doc.find(`//t:ProgramInformation[t:MemberOf/@crid="crid://dvb.org/metadata/schedules/now-next/${g}"]`, TNS)
+    .map(pi => ({ crid: pi.attr('programId').value(),
+      index: Number(pi.get(`./t:MemberOf[@crid="crid://dvb.org/metadata/schedules/now-next/${g}"]`, TNS).attr('index').value()) }));
+  const startOf = crid => Date.parse(doc.get(`//t:ScheduleEvent[t:Program/@crid="${crid}"]/t:PublishedStartTime`, TNS).text());
+  const earlier = byGroup('earlier'), later = byGroup('later'), now = byGroup('now');
+  assert.equal(now.length, 1);
+  assert.equal(earlier.length, 10);
+  assert.equal(later.length, 10);
+  for (const [list, dir] of [[earlier, -1], [later, 1]]) {
+    const sorted = list.slice().sort((a, b) => a.index - b.index);
+    assert.deepEqual(sorted.map(x => x.index), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    for (let i = 1; i < sorted.length; i++) {
+      assert.ok(dir * (startOf(sorted[i].crid) - startOf(sorted[i - 1].crid)) > 0, 'index 1 is next to the on-air event');
+    }
+    assert.ok(dir * (startOf(sorted[0].crid) - startOf(now[0].crid)) > 0);
+  }
+});
+
+test('programme information by pid: one ProgramInformation, 200 with empty tables for an unknown CRID (clauses 6.6.2, 6.6.3)', () => withServer(async base => {
+  assert.equal((await putConfig(base, guideConfig())).status, 200);
+  const nn = parse(await (await fetch(`${base}/epg/schedule?sid=${encodeURIComponent(sid)}&now_next=window`)).text());
+  const withCatchup = nn.get('//t:OnDemandProgram/t:Program', TNS).attr('crid').value();
+  const res = await fetch(`${base}/epg/program?pid=${encodeURIComponent(withCatchup)}`);
+  assert.equal(res.status, 200);
+  const doc = parse(await res.text());
+  assert.deepEqual(doc.find('//t:ProgramInformation', TNS).map(e => e.attr('programId').value()), [withCatchup]);
+  const fromSchedule = nn.get(`//t:ProgramInformation[@programId="${withCatchup}"]/t:BasicDescription`, TNS).toString();
+  assert.equal(doc.get('//t:ProgramInformation/t:BasicDescription', TNS).toString(), fromSchedule,
+    'all programme data provided in the Schedules response');
+  assert.equal(doc.find('//t:ProgramLocationTable/t:OnDemandProgram', TNS).length, 1);
+
+  const noCatchup = nn.get('//t:ProgramInformation[not(t:BasicDescription/t:Genre)]', TNS).attr('programId').value();
+  const plain = parse(await (await fetch(`${base}/epg/program?pid=${encodeURIComponent(noCatchup)}`)).text());
+  assert.equal(plain.find('//t:ProgramLocationTable', TNS).length, 1, 'the table is present');
+  assert.equal(plain.find('//t:ProgramLocationTable/*', TNS).length, 0, 'and empty when not on demand');
+
+  for (const pid of ['crid://dvbi.example.com/2024/prog/svc-a/1', 'crid://elsewhere/x', '']) {
+    const r = await fetch(`${base}/epg/program?pid=${encodeURIComponent(pid)}`);
+    assert.equal(r.status, 200, pid);
+    const d = parse(await r.text());
+    assert.equal(d.find('//t:ProgramInformationTable', TNS).length + d.find('//t:ProgramLocationTable', TNS).length, 2);
+    assert.equal(d.find('//t:ProgramInformationTable/*|//t:ProgramLocationTable/*', TNS).length, 0, pid);
+  }
+  assert.equal((await fetch(`${base}/epg/program`)).status, 200, 'no pid at all');
+}));
+
+test('metadata profile of guide responses (clause 6.10: tables 41, 42, 52, 59, 62)', () => {
+  const doc = parse(sched({ now_next: 'window' }).xml);
+  for (const s of doc.find('//t:Synopsis', TNS)) assert.equal(s.attr('length').value(), 'medium');
+  for (const m of doc.find('//t:ProgramInformation/t:MemberOf', TNS)) {
+    assert.equal(m.get('./@xsi:type', TNS).value(), 'MemberOfType');
+  }
+  const imgs = doc.find('//t:BasicDescription/t:RelatedMaterial/t:MediaLocator/t:MediaUri', TNS);
+  assert.ok(imgs.length > 0);
+  for (const u of imgs) {
+    assert.equal(u.attr('contentType').value(), 'image/jpeg');
+    assert.ok(!u.text().endsWith('.webp'), 'a WebP-only image is not signalled');
+  }
+  const ods = doc.find('//t:OnDemandProgram', TNS);
+  assert.ok(ods.length > 0);
+  for (const od of ods) {
+    assert.equal(od.attr('serviceIDRef').value(), sid);
+    const genres = od.find('./t:InstanceDescription/t:Genre', TNS).map(g => g.attr('href').value());
+    assert.equal(genres.length, 2);
+    assert.match(genres[0], /^urn:fvc:metadata:cs:MediaAvailabilityCS:2014-07:media_(un)?available$/);
+    assert.equal(genres[1], 'urn:fvc:metadata:cs:FEPGAvailabilityCS:2014-10:fepg_unavailable');
+  }
+  const startOf = od => Date.parse(od.get('./t:StartOfAvailability', TNS).text());
+  const endOf = od => Date.parse(od.get('./t:EndOfAvailability', TNS).text());
+  for (const od of ods) {
+    const want = NOW >= startOf(od) && NOW < endOf(od) ? 'media_available' : 'media_unavailable';
+    assert.ok(od.get('./t:InstanceDescription/t:Genre', TNS).attr('href').value().endsWith(want));
+  }
+});
+
+test('PUT /api/config refuses a programme title over 80 or a description over 250 characters (table 42)', () => withServer(async base => {
+  const cfg = guideConfig();
+  cfg.services[0].epgPrograms[0].title = 'é'.repeat(80);
+  cfg.services[0].epgPrograms[0].desc = 'é'.repeat(250);
+  assert.equal((await putConfig(base, cfg)).status, 200, 'at the limits, counted in characters');
+  cfg.services[0].epgPrograms[0].title = 'x'.repeat(81);
+  let res = await putConfig(base, cfg);
+  assert.equal(res.status, 400);
+  assert.match((await res.json()).error, /80 characters/);
+  cfg.services[0].epgPrograms[0].title = 'ok';
+  cfg.services[0].epgPrograms[0].desc = 'x'.repeat(251);
+  res = await putConfig(base, cfg);
+  assert.equal(res.status, 400);
+  assert.match((await res.json()).error, /250 characters/);
 }));

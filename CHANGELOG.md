@@ -1,5 +1,24 @@
 # Changelog — rt-dvb-i-application-provider
 
+## 2026-10 — Content guide (ETSI TS 103 770 V1.2.1)
+
+- **Services name their content guide source with `ContentGuideSourceRef`** (clause 6.1), and no
+  `ContentGuideServiceRef` is written, so clients query the guide with the `UniqueIdentifier`.
+- **Schedule requests read `start` and `end`** and return only the events starting in that period;
+  a missing, non-numeric, misaligned or out-of-range value is answered 400 (clause 6.5.2.1). An
+  unknown `sid` is answered 200 with empty tables (clause 6.5.2.2). The schedule is generated for
+  any period within the 28 days either side of today.
+- **`now_next=true` and `now_next=window`** on the schedule endpoint return the on-air event with
+  one, or up to ten, later and earlier events, grouped by the now/later/earlier structural CRIDs
+  with `MemberOf@index` (clause 6.5.4.4). `/epg/nownext` answers as `now_next=true`.
+- **`/epg/program?pid=<crid>`** is the `ProgramInfoEndpoint`: one `ProgramInformation` and its
+  on-demand availability, or 200 with empty tables for an unknown CRID (clause 6.6). Each event
+  has its own CRID, naming its service and start.
+- **Metadata profile**: `Synopsis` is `medium`; titles over 80 and descriptions over 250 characters
+  are refused on save; a programme image is signalled with `@contentType`, and only when JPEG or
+  PNG; `MemberOf` carries `xsi:type="MemberOfType"`; `OnDemandProgram` carries `@serviceIDRef` and
+  the two availability `Genre` terms (tables 41, 42, 52, 59, 62).
+
 ## 2026-10 — Service list content (ETSI TS 103 770 V1.2.1)
 
 - **`SubscriptionPackageList`** is written whenever an instance carries a subscription package,
