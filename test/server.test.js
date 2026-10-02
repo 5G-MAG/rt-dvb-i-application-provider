@@ -670,6 +670,21 @@ test('unknown Service ID is answered 200 with empty ProgramInformationTable and 
   }
 }));
 
+test('a recognised service with no events gets both tables, empty, and no Schedule (clause 6.5.4.1)', () => {
+  const none = guideConfig(); none.services[0].epgPrograms = [];
+  for (const [q, cfg, why] of [
+    [{ start: String(MIDNIGHT_S + 4 * 10800), end: String(MIDNIGHT_S + 6 * 10800) }, none, 'no programmes'],
+    [{ now_next: 'true' }, none, 'no programmes, now/next'],
+  ]) {
+    const r = sched(q, cfg);
+    assert.equal(r.status, 200, why);
+    const doc = parse(r.xml);
+    assert.equal(doc.find('//t:ProgramInformationTable', TNS).length, 1, why);
+    assert.equal(doc.find('//t:ProgramLocationTable', TNS).length, 1, why);
+    assert.equal(doc.find('//t:Schedule', TNS).length, 0, why);
+  }
+});
+
 test('every event in the ProgramLocationTable has its ProgramInformation, and only those (clause 6.5.4.1)', () => {
   for (const q of [{ start: String(MIDNIGHT_S + 4 * 10800), end: String(MIDNIGHT_S + 6 * 10800) }, { now_next: 'window' }]) {
     const doc = parse(sched(q).xml);

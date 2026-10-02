@@ -227,6 +227,15 @@ async function main() {
   check('epg-program.xml, unknown pid', await get(port, '/epg/program?pid=crid%3A%2F%2Fnone%2Fx'), TVA_XSD);
   server.close();
 
+  // A recognised service with no events: both tables, empty, and no Schedule (clause 6.5.4.1).
+  {
+    const { scheduleDocument } = require('../server.js');
+    const none = JSON.parse(JSON.stringify(sample));
+    none.services = none.services.slice(0, 1).map(s => ({ ...s, epgPrograms: [] }));
+    check('epg-schedule.xml, service with no events',
+      scheduleDocument(none, { sid: none.services[0].uid, now_next: 'true' }, Date.now(), 'http://localhost:4000').xml, TVA_XSD);
+  }
+
   // 6) EPG for the comprehensive sample, whose programmes carry series, images, parental ratings
   //    and catch-up, rendered by the same functions the endpoints use.
   console.log('\nEPG (comprehensive sample):');

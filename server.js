@@ -1336,13 +1336,13 @@ function scheduleDocument(cfg, query, nowMs, base, nowNextDefault = null) {
   // A service that exists but carries no programmes, or none in the window, is not an error and is
   // answered 200: per TS 103 770 V1.2.1 clause 4.3.3.4, a 404 from a ContentGuideSource API URL
   // makes the client re-acquire the whole Service List. Clause 6.5.4.1 asks for an empty Schedule
-  // element here, which the attached TV-Anytime schema rejects (ScheduleEvent is required), so the
-  // response stays the empty document.
+  // element here, which the attached TV-Anytime schema rejects (ScheduleEvent is required), so no
+  // Schedule is written; the clause's two tables still are, empty.
   const body = svc.epgPrograms?.length
     ? (nowNext ? nowNextResponse(cfg, svc, sid, kind, nowMs, imageVariant, base)
                : timestampResponse(cfg, svc, sid, win, nowMs, imageVariant, base))
     : null;
-  return { status: 200, xml: body || emptyTVAMain(cfg) };
+  return { status: 200, xml: body || emptyTables(cfg) };
 }
 
 app.get('/epg/schedule', (req, res) => {
