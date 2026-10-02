@@ -1,25 +1,57 @@
-# DVB-I Application Provider
+<p align="center">
+  <img src=".github/banner.svg" width="100%" alt="Reference Tools · DVB-I Services over 5G Systems: DVB-I Application Provider">
+</p>
 
-Publishes a DVB-I service list and its content guide, and gives an editor for maintaining them.
+<p align="center">
+  Publishes a DVB-I service list and its content guide, and gives an editor for maintaining them,
+  per ETSI TS 103 770.
+</p>
+
+<p align="center">
+  <img alt="Status: under development"
+    src="https://img.shields.io/badge/Status-Under_Development-yellow">
+  <a href="https://github.com/5G-MAG/rt-dvb-i-application-provider/releases"><img alt="Version"
+    src="https://img.shields.io/github/v/release/5G-MAG/rt-dvb-i-application-provider?label=Version&sort=semver"></a>
+  <a href="LICENSE"><img alt="License: 5G-MAG Public License v1.0"
+    src="https://img.shields.io/badge/License-5G--MAG%20PL%20v1.0-blue"></a>
+</p>
+
+<p align="center">
+  <a href="https://www.5g-mag.com/reference-tools/dvb-i">Project page</a> &nbsp;&middot;&nbsp;
+  <a href="https://github.com/5G-MAG/rt-dvb-i-application-provider/issues">Issues</a> &nbsp;&middot;&nbsp;
+  <a href="https://www.5g-mag.com/contributing">Contributing</a>
+</p>
+
+---
 
 ## At a glance
 
 |  |  |
 |---|---|
-| **Implements** | ETSI TS 103 770 V1.2.1 (2024-09), see [COMPLIANCE.md](COMPLIANCE.md) |
-| **Runs on** | Node.js 18 or newer |
+| **Implements** | ETSI TS 103 770 V1.2.1 (2024-09), *Digital Video Broadcasting (DVB); Service Discovery and Programme Metadata for DVB-I* |
 | **Serves** | `/service-list.xml`, `/epg/schedule`, `/epg/nownext`, an admin UI on `/` |
-| **Works with** | [`rt-dvb-i-application`](../rt-dvb-i-application) (the receiver), [`rt-dvb-i-service-list-registry`](../rt-dvb-i-service-list-registry) (discovery), [`rt-dvb-i-examples`](../rt-dvb-i-examples) (runnable demos) |
+| **Part of** | [DVB-I Services over 5G Systems](https://www.5g-mag.com/reference-tools/dvb-i), alongside [rt-dvb-i-application](https://github.com/5G-MAG/rt-dvb-i-application) (the receiver), [rt-dvb-i-service-list-registry](https://github.com/5G-MAG/rt-dvb-i-service-list-registry) (discovery), [rt-dvb-i-examples](https://github.com/5G-MAG/rt-dvb-i-examples) (runnable demos) and [rt-5gms-application](https://github.com/5G-MAG/rt-5gms-application) (the Exo DVB-I Player) |
 
 ## Introduction
 
-This is two of the components in the DVB-I architecture of TS 103 770 clause 4.1: the Service List
-Server, which serves the list of services a client installs, and the Content Guide Server, which
-answers that client's requests for schedule data. The editor on `/` is not part of the architecture;
-it exists so the list can be maintained without hand-editing XML.
+This repository is two of the components in the DVB-I architecture of TS 103 770 clause 4.1. The
+Service List Server, in that clause's words: "One or more servers delivering Service Lists to a DVB-I
+client." The Content Guide Server: "These respond to requests from a DVB-I client for content guide
+data."
+
+The editor on `/` is not part of that architecture. It exists so the list can be maintained without
+hand-editing XML.
 
 A DVB-I client finds this server through a Service List Registry, which is a separate component and
 a separate repository.
+
+## Specification
+
+Built against **ETSI TS 103 770 V1.2.1 (2024-09)**, a version rather than a release name.
+[COMPLIANCE.md](COMPLIANCE.md) records what is conformant, against which issue, and what is not.
+
+Clause-by-clause coverage, and what is still absent, is recorded on the project page:
+<https://www.5g-mag.com/reference-tools/dvb-i>
 
 ## Running
 
@@ -28,14 +60,17 @@ npm install
 npm start           # http://localhost:4000
 ```
 
-The service list is `config.json`, created from `config.example.json` on first start. Editing it
-through the UI and pressing *Save & Publish* rewrites that file and bumps the list version, which is
-what tells a receiver to re-read it.
+The CI workflow runs on Node.js 20; the `Dockerfile` builds on `node:22-alpine`.
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for environment variables, HTTPS, and what to set before this is
-reachable from anywhere but your own machine. One thing worth knowing up front: `ADMIN_TOKEN` is
-unset by default, which leaves the admin API and the logo upload open to anyone who can reach the
-port.
+## Configuration
+
+The service list is `config.json`, created from `config.example.json` on first start. Editing it
+through the UI and pressing *Save & Publish* rewrites that file and bumps the list version, which
+tells a receiver to re-read it.
+
+[DEPLOYMENT.md](DEPLOYMENT.md) covers environment variables, HTTPS, and what to set before the server
+is reachable from anywhere but your own machine. Note that `ADMIN_TOKEN` is unset by default, which
+leaves the admin API and the logo upload open to anyone who can reach the port.
 
 ## Templates
 
@@ -74,13 +109,18 @@ attachment archive accompanying TS 103 770.
 
 ## Documentation
 
-- [COMPLIANCE.md](COMPLIANCE.md) — what is conformant, against which issue, and what is not
-- [schemas/dvbi-5g-ext-1.0.xsd](schemas/dvbi-5g-ext-1.0.xsd) — the local 5G delivery extension
-- [DVB-I-OVER-5G.md](DVB-I-OVER-5G.md) — what carrying these services over a 5G system would require
-- [DEPLOYMENT.md](DEPLOYMENT.md) — running it somewhere other than your laptop
+- [COMPLIANCE.md](COMPLIANCE.md): what is conformant, against which issue, and what is not
+- [schemas/dvbi-5g-ext-1.0.xsd](schemas/dvbi-5g-ext-1.0.xsd): the local 5G delivery extension
+- [DVB-I-OVER-5G.md](DVB-I-OVER-5G.md): what carrying these services over a 5G system would require
+- [DEPLOYMENT.md](DEPLOYMENT.md): running it somewhere other than your laptop
 - [CHANGELOG.md](CHANGELOG.md)
+
+## Contributing
+
+Contributions are welcome. How to raise an issue, fork the repository and open a pull request, and
+the Contributor License Agreement required before code can be merged, are described at
+<https://www.5g-mag.com/contributing>.
 
 ## License
 
-No licence file has been added to this repository yet, so no licence is granted. Add one before
-publishing or sharing it.
+Distributed under the 5G-MAG Public License v1.0. See [LICENSE](LICENSE).

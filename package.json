@@ -2,6 +2,7 @@
   "name": "rt-dvb-i-application-provider",
   "version": "1.0.0",
   "description": "DVB-I Application Provider and Admin Portal \u2014 service list manager and authoring UI",
+  "license": "SEE LICENSE IN LICENSE",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
