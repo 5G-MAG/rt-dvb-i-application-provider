@@ -248,6 +248,9 @@ test('mbmsLocatorProblem: rejects what clause 8.2.2 does not allow', () => {
     'mbms://example.com/a?x=1',              // a query is not part of the prefix
     'mbms://example.com&foo=1',              // mid-part pairs outside the ROM form
     'mbms://example.com&label=not a uri',    // suffix is not a URI
+    'mbms://example.com/a b',                // a space is in no RFC 3986 character class
+    'mbms://exa mple.com',                   // nor in a host
+    'mbms://example.com#f',                  // a fragment is not part of the prefix
   ]) assert.ok(mbmsLocatorProblem(u), u);
 });
 
@@ -413,6 +416,18 @@ test('PUT /api/config and history restore refuse two published services with one
   const r2 = await fetch(`${base}/api/history/restore/${snapName}`, { method: 'POST' });
   assert.equal(r2.status, 400);
   assert.match((await r2.json()).error, /UniqueIdentifier/);
+}));
+
+test('history restore refuses a snapshot whose mbms locator is not an MBMS URL (TS 26.347 clause 8.2.2)', () => withServer(async base => {
+  const cfg = twoServices();
+  assert.equal((await putConfig(base, cfg)).status, 200);
+  const snapName = `config-9998-test-${process.pid}.json`;
+  const snap = JSON.parse(JSON.stringify(cfg));
+  snap.services[0].instances = [{ id: 'i1', label: '5G', type: 'mbms', priority: 1, url: 'mbms://example.com/a b', drmSystems: [] }];
+  fs.writeFileSync(path.join(ROOT, 'config-history', snapName), JSON.stringify(snap));
+  const r = await fetch(`${base}/api/history/restore/${snapName}`, { method: 'POST' });
+  assert.equal(r.status, 400);
+  assert.match((await r.json()).error, /not an MBMS URL/);
 }));
 
 test('editor: Clone gives the copy its own UniqueIdentifier', () => {

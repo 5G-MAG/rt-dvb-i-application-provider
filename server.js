@@ -96,6 +96,29 @@ function cgsidProblem(cfg) {
 // Its prefix "is the serviceId of the service", which only the BM-SC knows, so that is not checked.
 const MBMS_ROM_AUTHORITY = 'rom.3gpp.org';
 
+// RFC 3986 character classes for the parts of the MBMS URL (clauses 2.1 to 2.3, 3.2 and 3.3). The
+// prefix "shall not contain the character "&"" (TS 26.347 clause 8.2.2), so "&" is taken out of
+// sub-delims there; mid-value is TS 26.347's own uchar set.
+const MBMS_URI = (() => {
+  const U = "A-Za-z0-9\\-._~";                 // unreserved
+  const PCT = "%[0-9A-Fa-f]{2}";               // pct-encoded
+  const SUB = "!$'()*+,;=";                    // sub-delims without "&"
+  const userinfo = `(?:[${U}${SUB}:]|${PCT})*`;
+  const regName = `(?:[${U}${SUB}]|${PCT})+`;
+  const ipv4 = "(?:\\d{1,3}\\.){3}\\d{1,3}";
+  const ipLiteral = "\\[[0-9A-Fa-f:.]+\\]";     // IPv6address; IPvFuture is not accepted
+  const host = `(?:${ipLiteral}|${ipv4}|${regName})`;
+  const authority = `(?:${userinfo}@)?${host}(?::\\d*)?`;
+  const pathAbempty = `(?:/(?:[${U}${SUB}:@]|${PCT})*)*`;
+  const midValue = `(?:[${U};?:@=+$,/]|${PCT})+`;
+  const resourceURI = `[A-Za-z][A-Za-z0-9+.\\-]*:(?:[${U}:/?#\\[\\]@!$&'()*+,;=]|${PCT})*`;
+  return {
+    prefix: new RegExp(`^mbms://(${authority})${pathAbempty}$`),
+    mid: new RegExp(`^[A-Za-z][A-Za-z0-9]*=${midValue}$`),
+    label: new RegExp(`^${resourceURI}$`),
+  };
+})();
+
 function mbmsLocatorProblem(url) {
   const u = String(url || '');
   if (!u.startsWith('mbms://')) return `"${u}" is not an MBMS URL: it must start with mbms:// (TS 26.347 clause 8.2.2).`;
@@ -103,24 +126,12 @@ function mbmsLocatorProblem(url) {
   const head = at < 0 ? u : u.slice(0, at);
   const label = at < 0 ? null : u.slice(at + '&label='.length);
   const [prefix, ...mid] = head.split('&');
-  let parsed;
-  try { parsed = new URL('http' + prefix.slice('mbms'.length)); } catch (_) { parsed = null; }
-  if (!parsed || !parsed.host || parsed.search || parsed.hash) {
-    return `"${u}" is not an MBMS URL: after mbms:// it needs an authority and an optional path, ` +
-           `with no query or fragment before any &label= (TS 26.347 clause 8.2.2).`;
-  }
-  if (mid.length && parsed.host !== MBMS_ROM_AUTHORITY) {
-    return `"${u}" carries &name=value pairs, which TS 26.347 clause 8.2.2 says shall not be present ` +
-           `outside the Receive-only Mode form on mbms://${MBMS_ROM_AUTHORITY} (clause 8.2.4).`;
-  }
-  if (mid.some(p => !/^[A-Za-z][A-Za-z0-9]*=.+$/.test(p))) {
-    return `"${u}" has a mid-part that is not &name=value (TS 26.347 clause 8.2.2).`;
-  }
-  if (label !== null) {
-    try { new URL(label); } catch (_) {
-      return `"${u}": the &label= suffix must be a URI (TS 26.347 clause 8.2.2).`;
-    }
-  }
+  const m = MBMS_URI.prefix.exec(prefix);
+  if (!m) return `"${u}" is not an MBMS URL: after mbms:// it needs an RFC 3986 authority and an optional path, with no "&", query or fragment before any &label= (TS 26.347 clause 8.2.2).`;
+  const authorityHost = m[1].replace(/^[^@]*@/, '').replace(/:\d*$/, '');
+  if (mid.length && authorityHost !== MBMS_ROM_AUTHORITY) return `"${u}" carries &name=value pairs, which TS 26.347 clause 8.2.2 says shall not be present outside the Receive-only Mode form on mbms://${MBMS_ROM_AUTHORITY} (clause 8.2.4).`;
+  if (mid.some(p => !MBMS_URI.mid.test(p))) return `"${u}" has a mid-part that is not &name=value (TS 26.347 clause 8.2.2).`;
+  if (label !== null && !MBMS_URI.label.test(label)) return `"${u}": the &label= suffix must be a URI (TS 26.347 clause 8.2.2, RFC 3986 clause 3).`;
   return null;
 }
 
@@ -1572,6 +1583,8 @@ app.post('/api/history/restore/:filename', requireAdmin, rateLimit('mutate', 30,
   try {
     const data = JSON.parse(fs.readFileSync(filepath, 'utf8'));
     if (_hasUnsafeKeys(data)) return res.status(400).json({ error: 'Snapshot contains disallowed keys' });
+    const mbms = mbmsProblem(data);
+    if (mbms) return res.status(400).json({ error: mbms });
     const pub = publishProblem(data);
     if (pub) return res.status(400).json({ error: pub });
     assertValidConfigShape(data);
