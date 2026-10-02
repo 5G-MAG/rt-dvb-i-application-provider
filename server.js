@@ -904,7 +904,7 @@ app.get('/service-list.xml', (req, res) => {
       return res.status(304).end();
     }
   }
-  const base = `${req.protocol}://${req.get('host')}`;
+  const base = publicBase(req);
   const targetCountry = req.query.TargetCountry || req.query.targetCountry || '';
   res.setHeader('Content-Type', SERVICE_LIST_MEDIA_TYPE);
   res.setHeader('Cache-Control', 'no-cache');
@@ -1312,7 +1312,7 @@ app.put('/api/config', requireAdmin, rateLimit('mutate', 30, 60000), (req, res) 
     saveHistory(config); // snapshot previous state
     config = updated;
     saveConfig(config); // also bumps lastSaved
-    const base = `${req.protocol}://${req.get('host')}`;
+    const base = publicBase(req);
     res.json({ ok: true, version: config.version, xml: buildServiceList(base, config) });
   } catch (e) {
     // assertValidConfigShape throws a plain validation Error; distinguish from real server errors
@@ -1355,7 +1355,7 @@ app.post('/api/history/restore/:filename', requireAdmin, rateLimit('mutate', 30,
 });
 
 app.get('/api/xml', requireAdmin, (req, res) => {
-  const base = `${req.protocol}://${req.get('host')}`;
+  const base = publicBase(req);
   res.type('xml').send(buildServiceList(base, config));
 });
 
@@ -1438,31 +1438,57 @@ app.get('/api/fetch-xml', requireAdmin, rateLimit('proxy', 20, 60000), async (re
 app.get('/api/health', (req, res) =>
   res.json({ status: 'ok', version: config.version, services: config.services.length }));
 
-// Optional native HTTPS via HTTPS_KEY_PATH/HTTPS_CERT_PATH (PEM file paths). Falls back to plain
-// HTTP if unset — the recommended production pattern is TLS termination at a reverse proxy
-// (see DEPLOYMENT.md), but native HTTPS is supported for standalone deployments.
-function startServer() {
-  const keyPath = process.env.HTTPS_KEY_PATH, certPath = process.env.HTTPS_CERT_PATH;
-  if (keyPath && certPath) {
-    try {
-      const key = fs.readFileSync(keyPath), cert = fs.readFileSync(certPath);
-      return https.createServer({ key, cert }, app).listen(PORT, () => {
-        logger.info('DVB-I Application Provider and Admin Portal listening (https)', { port: PORT });
-        console.log(`DVB-I Application Provider and Admin Portal  →  https://localhost:${PORT}`);
-      });
-    } catch (e) {
-      logger.error('Failed to load HTTPS cert/key, falling back to HTTP', { error: String(e.message || e) });
+// TS 103 770 V1.2.1 clause 7.3: "All HTTP transactions and connections between the DVB-I client and
+// DVB-I metadata endpoints, specifically Service List Registries, Service List Servers, Content
+// Guide Servers, described in the present document shall be performed using HTTP over TLS", except
+// that "HTTP may be used without TLS" when the client is on the same private subnet.
+//
+// So the server serves HTTPS, from the PEM files named by HTTPS_KEY_PATH and HTTPS_CERT_PATH, and
+// refuses to start without them rather than fall back to plain HTTP. Plain HTTP is served only when
+// the operator says which of the two cases applies:
+//   PLAIN_HTTP=private-subnet    clients are on the same private subnet; URLs in the list are http://
+//   PLAIN_HTTP=behind-tls-proxy  a reverse proxy terminates TLS; URLs in the list are https://
+// The TLS versions are Node's defaults, which offer TLS 1.2 and 1.3 (clause 7.3: servers "shall
+// support TLS version 1.2" and "should support TLS version 1.3").
+const PLAIN_HTTP_MODES = { 'private-subnet': 'http', 'behind-tls-proxy': 'https' };
+let publicScheme = null;
+
+// The scheme and host clients reach this server at, for the endpoint URLs written into the list.
+function publicBase(req) {
+  return `${publicScheme || req.protocol}://${req.get('host')}`;
+}
+
+function startServer(env = process.env, port = PORT) {
+  const mode = env.PLAIN_HTTP;
+  if (mode !== undefined && mode !== '') {
+    if (!PLAIN_HTTP_MODES[mode]) {
+      throw new Error(`PLAIN_HTTP must be one of ${Object.keys(PLAIN_HTTP_MODES).join(', ')} (got "${mode}")`);
     }
+    publicScheme = PLAIN_HTTP_MODES[mode];
+    return http.createServer(app).listen(port, () => {
+      logger.info('DVB-I Application Provider and Admin Portal listening (http)', { port, plainHttp: mode });
+      console.log(`DVB-I Application Provider and Admin Portal  →  http://localhost:${port} (PLAIN_HTTP=${mode})`);
+      console.log(`Service list    →  http://localhost:${port}/service-list.xml`);
+    });
   }
-  return http.createServer(app).listen(PORT, () => {
-    logger.info('DVB-I Application Provider and Admin Portal listening (http)', { port: PORT });
-    console.log(`DVB-I Application Provider and Admin Portal  →  http://localhost:${PORT}`);
-    console.log(`Service list    →  http://localhost:${PORT}/service-list.xml`);
+  const keyPath = env.HTTPS_KEY_PATH, certPath = env.HTTPS_CERT_PATH;
+  if (!keyPath || !certPath) {
+    throw new Error('HTTPS_KEY_PATH and HTTPS_CERT_PATH are required (TS 103 770 clause 7.3). To serve plain ' +
+                    'HTTP set PLAIN_HTTP=private-subnet or PLAIN_HTTP=behind-tls-proxy; see DEPLOYMENT.md.');
+  }
+  const key = fs.readFileSync(keyPath), cert = fs.readFileSync(certPath);
+  publicScheme = 'https';
+  return https.createServer({ key, cert }, app).listen(port, () => {
+    logger.info('DVB-I Application Provider and Admin Portal listening (https)', { port });
+    console.log(`DVB-I Application Provider and Admin Portal  →  https://localhost:${port}`);
   });
 }
 
 // Only listen when run directly; when required (e.g. by the XSD test) just export the builders.
-if (require.main === module) startServer();
+if (require.main === module) {
+  try { startServer(); }
+  catch (e) { logger.error('Not started', { error: String(e.message || e) }); process.exit(1); }
+}
 
 module.exports = {
   app, startServer, buildServiceList, buildSchedule, msDur, cgsidProblem, mbmsLocatorProblem,

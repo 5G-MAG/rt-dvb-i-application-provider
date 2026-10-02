@@ -57,8 +57,14 @@ Clause-by-clause coverage, and what is still absent, is recorded on the project 
 
 ```bash
 npm install
-npm start           # http://localhost:4000
+HTTPS_KEY_PATH=key.pem HTTPS_CERT_PATH=cert.pem npm start   # https://localhost:4000
+PLAIN_HTTP=private-subnet npm start                         # http://localhost:4000
 ```
+
+The service list and content guide are served over TLS (ETSI TS 103 770 V1.2.1 clause 7.3), so the
+server does not start without a certificate unless `PLAIN_HTTP` says why plain HTTP is allowed:
+`private-subnet` when clients are on the same private subnet, `behind-tls-proxy` when a reverse
+proxy terminates TLS. See [DEPLOYMENT.md](DEPLOYMENT.md).
 
 The CI workflow runs on Node.js 20; the `Dockerfile` builds on `node:22-alpine`.
 

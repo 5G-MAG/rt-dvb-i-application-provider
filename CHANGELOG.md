@@ -1,5 +1,14 @@
 # Changelog — rt-dvb-i-application-provider
 
+## 2026-10 — HTTP over TLS (ETSI TS 103 770 V1.2.1 clause 7.3)
+
+- **TLS by default, no fall back.** The server serves HTTPS from `HTTPS_KEY_PATH` and
+  `HTTPS_CERT_PATH` and does not start without them; it used to fall back to plain HTTP silently.
+- **`PLAIN_HTTP`** asks for plain HTTP and says why: `private-subnet` (the clause 7.3 exception,
+  `http://` endpoint URLs) or `behind-tls-proxy` (a proxy terminates TLS, so the endpoint URLs in
+  the list are written `https://`, where they used to take the scheme of the proxy's connection).
+- **Upgrading:** a deployment that ran plain HTTP without setting anything must now set one of these.
+
 ## 2026-10 — Content guide (ETSI TS 103 770 V1.2.1)
 
 - **Services name their content guide source with `ContentGuideSourceRef`** (clause 6.1), and no

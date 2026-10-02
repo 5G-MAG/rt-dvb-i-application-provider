@@ -778,3 +778,80 @@ test('PUT /api/config refuses a programme title over 80 or a description over 25
   assert.equal(res.status, 400);
   assert.match((await res.json()).error, /250 characters/);
 }));
+
+// ── HTTP over TLS (TS 103 770 V1.2.1 clause 7.3)
+// These start the real server through startServer(), which sets the scheme written into the list
+// for the rest of the process, so they come last in this file.
+
+const { startServer } = require('../server.js');
+const listening = srv => new Promise((resolve, reject) => { srv.once('listening', resolve); srv.once('error', reject); });
+
+function selfSigned() {
+  const { execFileSync } = require('node:child_process');
+  const os = require('node:os');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dvbi-tls-'));
+  const key = path.join(dir, 'key.pem'), cert = path.join(dir, 'cert.pem');
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', key, '-out', cert,
+    '-days', '1', '-subj', '/CN=localhost'], { stdio: 'ignore' });
+  return { dir, key, cert };
+}
+
+const haveOpenssl = (() => {
+  try { require('node:child_process').execFileSync('openssl', ['version'], { stdio: 'ignore' }); return true; }
+  catch { return false; }
+})();
+
+test('startServer refuses to start without a certificate unless PLAIN_HTTP names the case (clause 7.3)', () => {
+  assert.throws(() => startServer({}, 0), /HTTPS_KEY_PATH and HTTPS_CERT_PATH are required/);
+  assert.throws(() => startServer({ HTTPS_KEY_PATH: '/nonexistent/key.pem', HTTPS_CERT_PATH: '/nonexistent/cert.pem' }, 0),
+    /ENOENT/, 'an unreadable certificate is an error, not a fall back to HTTP');
+  assert.throws(() => startServer({ PLAIN_HTTP: 'yes' }, 0), /PLAIN_HTTP must be one of/);
+});
+
+test('HTTPS by default: TLS 1.2 and TLS 1.3 accepted, https:// endpoints in the list (clause 7.3)',
+  { skip: haveOpenssl ? false : 'openssl not available to make a test certificate' }, async () => {
+  const tls = require('node:tls');
+  const { dir, key, cert } = selfSigned();
+  const restore = snapshotState();
+  const srv = startServer({ HTTPS_KEY_PATH: key, HTTPS_CERT_PATH: cert }, 0);
+  try {
+    await listening(srv);
+    const port = srv.address().port;
+    for (const v of ['TLSv1.2', 'TLSv1.3']) {
+      const got = await new Promise((resolve, reject) => {
+        const sock = tls.connect({ host: '127.0.0.1', port, rejectUnauthorized: false, minVersion: v, maxVersion: v },
+          () => { resolve(sock.getProtocol()); sock.end(); });
+        sock.on('error', reject);
+      });
+      assert.equal(got, v);
+    }
+    const xml = await new Promise((resolve, reject) => {
+      require('node:https').get({ host: '127.0.0.1', port, path: '/service-list.xml', rejectUnauthorized: false,
+        headers: { host: 'dvbi.example.org' } }, res => {
+        let b = ''; res.on('data', c => b += c); res.on('end', () => resolve(b));
+      }).on('error', reject);
+    });
+    const uris = parse(xml).find('//d:ContentGuideSource//dvbisd-t:URI',
+      { ...NS, 'dvbisd-t': 'urn:dvb:metadata:servicediscovery-types:2023' }).map(e => e.text());
+    assert.ok(uris.length && uris.every(u => u.startsWith('https://dvbi.example.org/')), uris.join(' '));
+  } finally {
+    srv.close();
+    restore();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('PLAIN_HTTP=behind-tls-proxy serves HTTP but writes https:// endpoints; private-subnet writes http://', async () => {
+  for (const [mode, scheme] of [['behind-tls-proxy', 'https'], ['private-subnet', 'http']]) {
+    const restore = snapshotState();
+    const srv = startServer({ PLAIN_HTTP: mode }, 0);
+    try {
+      await listening(srv);
+      const res = await fetchFrom('127.0.0.250')(`http://127.0.0.1:${srv.address().port}/service-list.xml`);
+      assert.equal(res.status, 200);
+      const uris = parse(await res.text()).find('//d:ContentGuideSource//dvbisd-t:URI',
+        { ...NS, 'dvbisd-t': 'urn:dvb:metadata:servicediscovery-types:2023' }).map(e => e.text());
+      assert.ok(uris.length && uris.every(u => u.startsWith(`${scheme}://127.0.0.1:`)), `${mode}: ${uris.join(' ')}`);
+    } finally { srv.close(); restore(); }
+  }
+});

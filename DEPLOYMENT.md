@@ -54,7 +54,8 @@ a multi-instance deployment behind a load balancer would need a shared store, e.
 | `PORT` | `4000` | port to listen on |
 | `ADMIN_TOKEN` | unset | when set, `/api/*` requires `Authorization: Bearer <token>`. **Unset means the admin API, including logo upload, is open to anyone who can reach the server.** |
 | `LOG_LEVEL` | `info` | `error`, `warn`, `info`, `debug` |
-| `HTTPS_KEY_PATH`, `HTTPS_CERT_PATH` | unset | serve HTTPS directly instead of behind a proxy |
+| `HTTPS_KEY_PATH`, `HTTPS_CERT_PATH` | unset | PEM key and certificate; required unless `PLAIN_HTTP` is set, and the server does not start if they cannot be read |
+| `PLAIN_HTTP` | unset | serve plain HTTP: `private-subnet` (clients on the same private subnet; endpoint URLs in the list are `http://`) or `behind-tls-proxy` (a reverse proxy terminates TLS; endpoint URLs are `https://`) |
 | `DVBI_SCHEMAS` | `test/schemas` | directory holding the XSD and classification scheme files, for `npm run test:xsd` and `npm run test:cs`. Keep it outside the working tree. Without it both checks skip and exit 0. |
 
 ## Logging
@@ -88,14 +89,24 @@ HTTPS" rule there, and includes a worked example using a plain `http://` URL in 
 Do not conflate the two: **the service list and EPG endpoints need HTTPS by spec; individual stream
 URLs inside them are a separate matter and may legitimately be plain HTTP.**
 
-Both apps can terminate TLS themselves via `HTTPS_KEY_PATH`/`HTTPS_CERT_PATH` (PEM file paths):
+The server terminates TLS itself via `HTTPS_KEY_PATH`/`HTTPS_CERT_PATH` (PEM file paths):
 ```
 HTTPS_KEY_PATH=/etc/tls/key.pem HTTPS_CERT_PATH=/etc/tls/cert.pem npm start
 ```
-If unset, or if the files can't be read, the server logs an error and falls back to plain HTTP on the
-same port — **do not leave it unset in production**, since that would violate §7.3 above. Alternative:
-terminate TLS at a reverse proxy (nginx/Caddy/ALB) in front of the app instead — simpler cert rotation,
-and it's also where `ADMIN_TOKEN`-based auth should be paired with network-level access control.
+If they are unset, or the files cannot be read, the server logs an error and does not start; there
+is no fall back to plain HTTP. Plain HTTP has to be asked for with `PLAIN_HTTP`, naming the case:
+
+- `PLAIN_HTTP=behind-tls-proxy`: a reverse proxy (nginx/Caddy/ALB) terminates TLS in front of the
+  app, which is simpler for certificate rotation and is also where `ADMIN_TOKEN`-based auth should be
+  paired with network-level access control. The endpoint URLs written into the service list use
+  `https://`, the scheme clients reach the proxy with.
+- `PLAIN_HTTP=private-subnet`: the clause 7.3 exception, for clients on the same private subnet.
+  Endpoint URLs use `http://`. The server does not check where a client connects from; keeping it
+  off other networks is the operator's job.
+
+TLS 1.2 and 1.3 are offered (Node's defaults). The root certificates, cipher suites, signature
+algorithms, key sizes and curves of ETSI TS 102 796 clause 11.2, which clause 7.3 refers to, are not
+configured or checked here.
 
 ## Receiver: pinned player libraries + CSP
 

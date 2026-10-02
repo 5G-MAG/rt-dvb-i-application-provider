@@ -190,6 +190,11 @@ where wrong:
 - **Region `@countryCodes` is checked for format only.** It is the list's configured target country
   (`[A-Z]{3}`, comma-separated), required on publish when services have target regions; whether a
   code is assigned in ISO 3166 is not checked.
+- **TLS profile not checked.** The server serves TLS 1.2 and 1.3 (ETSI TS 103 770 V1.2.1 clause 7.3)
+  and does not start without a certificate unless `PLAIN_HTTP` is set; the cipher suites, signature
+  algorithms, key sizes and curves clause 7.3 takes from ETSI TS 102 796 clause 11.2 are not
+  configured, since that document is not held. `PLAIN_HTTP=private-subnet` does not verify that
+  clients are on the same private subnet.
 - **`OnDemandProgram/ProgramURL` is the catch-up stream URL, not a deep-linked XML AIT.** ETSI
   TS 103 770 V1.2.1 table 52 requires "A URL location of a content deep-linked XML AIT for the
   on-demand programme" with `@contentType` `application/vnd.dvb.ait+xml`. An XML AIT names a player
