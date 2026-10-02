@@ -1,5 +1,19 @@
 # Changelog — rt-dvb-i-application-provider
 
+## 2026-10 — Publication and versioning (ETSI TS 103 770 V1.2.1)
+
+- **The service list is served as `application/vnd.dvb.dvbisl+xml`**, the media type clause 5.1.2
+  requires, instead of `application/xml`.
+- **Every publish increments `@version`.** Logo upload, logo removal and history restore now
+  publish under a new list `@version` (and so a new `RegionList@version`), and any service whose
+  `Service` element changed gets a new `Service@version`, whichever path published it. A restored
+  copy moves numbers forward, never back.
+- **`@priority` is never written as `undefined`.** An instance without a priority is written
+  without the attribute (schema default 0); a priority that is not a non-negative integer is
+  refused on save with a 400.
+- **A `UniqueIdentifier` is published once.** Save and history restore refuse two enabled services
+  with the same identifier (clause 5.1.4), and *Clone* gives the copy its own.
+
 ## 2026-10 — 5G Broadcast instances without a local extension
 
 - **A 5G Broadcast instance is `IdentifierBasedDeliveryParameters` holding its `mbms://` URL.** It

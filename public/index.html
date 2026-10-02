@@ -1458,6 +1458,11 @@ function cloneService(i) {
   const src   = config.services[i];
   const clone = JSON.parse(JSON.stringify(src));
   clone.id    = 'svc-' + Date.now();
+  // A service is defined once in a list (TS 103 770 clause 5.1.4), so the copy gets its own UID.
+  const takenUid = new Set(config.services.map(x => x.uid));
+  let n = 2;
+  while (takenUid.has(`${src.uid}-${n}`)) n++;
+  clone.uid   = `${src.uid}-${n}`;
   clone.name  = src.name + ' (Copy)';
   clone.lcn   = null;
   clone.instances = clone.instances.map(inst => ({ ...inst, id: 'inst-' + Math.random().toString(36).slice(2, 9) }));

@@ -127,6 +127,43 @@ function mbmsProblem(cfg) {
   return null;
 }
 
+// TS 103 770 V1.2.1 clause 5.1.4: "A Service shall only be defined once in a Service List but may be
+// referenced multiple times with different logical channel numbers." Only enabled services are
+// published, so a disabled copy is refused at the publish that enables it.
+function uidProblem(cfg) {
+  const seen = new Map();
+  for (const [i, s] of (cfg.services || []).entries()) {
+    if (!s || s.enabled === false) continue;
+    if (seen.has(s.uid)) {
+      return `services[${seen.get(s.uid)}] and services[${i}] share the UniqueIdentifier "${s.uid}": ` +
+             `a service shall only be defined once in a service list (TS 103 770 clause 5.1.4).`;
+    }
+    seen.set(s.uid, i);
+  }
+  return null;
+}
+
+// ServiceInstance@priority is typed nonNegativeInteger with default="0" (clause 5.5.4) and is
+// optional (table 16). An instance without one is written without the attribute; any other value
+// has to be a non-negative integer.
+const hasPriority = p => p !== undefined && p !== null && p !== '';
+
+function priorityProblem(cfg) {
+  for (const [i, s] of (cfg.services || []).entries()) {
+    for (const [j, inst] of ((s && s.instances) || []).entries()) {
+      if (inst && hasPriority(inst.priority) && !/^\d+$/.test(String(inst.priority))) {
+        return `services[${i}].instances[${j}]: priority "${inst.priority}" is not a non-negative ` +
+               `integer (ServiceInstance@priority, TS 103 770 clause 5.5.4).`;
+      }
+    }
+  }
+  return null;
+}
+
+function publishProblem(cfg) {
+  return uidProblem(cfg) || priorityProblem(cfg);
+}
+
 function assertValidConfigShape(cfg) {
   if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) throw new Error('config must be an object');
   if (!Array.isArray(cfg.services)) throw new Error('config.services must be an array');
@@ -190,6 +227,8 @@ let config    = loadConfig();
   if (problem) logger.warn('Service list will not validate against the DVB-I schema', { problem });
   const mbms = mbmsProblem(config);
   if (mbms) logger.warn('Service list carries an invalid MBMS locator', { problem: mbms });
+  const pub = publishProblem(config);
+  if (pub) logger.warn('Service list will not be accepted on its next publish', { problem: pub });
 }
 // Floored to whole seconds: HTTP-date precision is 1s, so a sub-second lastSaved
 // would never satisfy If-Modified-Since and 304s would never fire right after a save.
@@ -298,7 +337,9 @@ app.post('/api/logos/upload/:id', requireAdmin, rateLimit('mutate', 30, 60000), 
     return res.status(404).json({ error: 'Service not found' });
   }
   const relativePath = `/logos/uploaded/${req.file.filename}`;
+  const prev = JSON.parse(JSON.stringify(config));
   svc.logoUrl = relativePath;
+  assignVersions(config, prev, [svc.uid]);
   saveConfig(config);
   res.json({ ok: true, url: relativePath });
 });
@@ -310,7 +351,9 @@ app.delete('/api/logos/upload/:id', requireAdmin, rateLimit('mutate', 30, 60000)
     if (fullPath.startsWith(LOGOS_DIR)) {
       try { fs.unlinkSync(fullPath); } catch (_) {}
     }
+    const prev = JSON.parse(JSON.stringify(config));
     svc.logoUrl = '';
+    assignVersions(config, prev, [svc.uid]);
     saveConfig(config);
   }
   res.json({ ok: true });
@@ -530,8 +573,9 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
       const subPkgEl = s.subscriptionPackage
         ? `\n      <SubscriptionPackage>${xe(s.subscriptionPackage)}</SubscriptionPackage>` : '';
 
+      const prioAttr = hasPriority(inst.priority) ? ` priority="${xe(String(inst.priority))}"` : '';
       const head = `
-    <ServiceInstance priority="${xe(String(inst.priority))}">
+    <ServiceInstance${prioAttr}>
       <DisplayName>${xe(inst.label || s.name)}</DisplayName>${protEl}${accessEl}${availEl}${subPkgEl}`;
 
       // URI is declared in the servicediscovery-types:2023 namespace (ExtendedURIType / m3u8RefType),
@@ -694,6 +738,40 @@ ${serviceBlocks}
 </ServiceList>`;
 }
 
+// TS 103 770 V1.2.1 clause 5.5.1, table 14, row @version: "The version number of the service list.
+// Shall be incremented for every published change." Table 15 says the same of Service@version and
+// table 38 of RegionList@version, which is written from the list's. Every path that publishes
+// (editor or API save, logo upload and removal, history restore) goes through here, so none can
+// republish a changed list or service under a number already used.
+//
+// A service has changed when its rendered Service element differs from the one last published,
+// version aside, or when the caller names it (a new logo file can sit at an unchanged URL). Its
+// version never goes below the last published one, so restoring an older copy moves it forward.
+function renderedServices(cfg) {
+  const out = new Map();
+  const re = /<Service version="[^"]*">\s*<UniqueIdentifier>([^<]*)<\/UniqueIdentifier>([\s\S]*?)<\/Service>/g;
+  for (const m of buildServiceList('', cfg).matchAll(re)) out.set(m[1], m[2]);
+  return out;
+}
+
+function assignVersions(next, prev, changedUids = []) {
+  next.version = (Number(prev.version) || 0) + 1;
+  const before = renderedServices(prev);
+  const after  = renderedServices(next);
+  for (const s of next.services) {
+    const old = (prev.services || []).find(p => p && p.uid === s.uid);
+    if (!old) continue;
+    const was = Number(old.version) || 1;
+    const is  = Number(s.version) || 1;
+    const changed = changedUids.includes(s.uid) || before.get(xe(s.uid)) !== after.get(xe(s.uid));
+    s.version = changed ? Math.max(is, was + 1) : Math.max(is, was);
+  }
+}
+
+// TS 103 770 V1.2.1 clause 5.1.2: "A Service List shall be made available using HTTP according to
+// clause 7.3 at a Service List URL, using the Media Type (MIME type) application/vnd.dvb.dvbisl+xml."
+const SERVICE_LIST_MEDIA_TYPE = 'application/vnd.dvb.dvbisl+xml';
+
 app.get('/service-list.xml', (req, res) => {
   // Conditional GET per TS 103 770 V1.2.1 clause 4.3.2.2, If-Modified-Since headers.
   // A184r2 clause 4.11 covers when a client refreshes the list.
@@ -706,7 +784,7 @@ app.get('/service-list.xml', (req, res) => {
   }
   const base = `${req.protocol}://${req.get('host')}`;
   const targetCountry = req.query.TargetCountry || req.query.targetCountry || '';
-  res.setHeader('Content-Type', 'application/xml');
+  res.setHeader('Content-Type', SERVICE_LIST_MEDIA_TYPE);
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Last-Modified', lastSaved.toUTCString());
   res.send(buildServiceList(base, config, { targetCountry }));
@@ -1013,7 +1091,10 @@ app.put('/api/config', requireAdmin, rateLimit('mutate', 30, 60000), (req, res) 
     if (cgsid) return res.status(400).json({ error: cgsid });
     const mbms = mbmsProblem(updated);
     if (mbms) return res.status(400).json({ error: mbms });
-    updated.version = (config.version || 0) + 1;
+    const pub = publishProblem(updated);
+    if (pub) return res.status(400).json({ error: pub });
+    assertValidConfigShape(updated);
+    assignVersions(updated, config);
     saveHistory(config); // snapshot previous state
     config = updated;
     saveConfig(config); // also bumps lastSaved
@@ -1048,6 +1129,10 @@ app.post('/api/history/restore/:filename', requireAdmin, rateLimit('mutate', 30,
   try {
     const data = JSON.parse(fs.readFileSync(filepath, 'utf8'));
     if (_hasUnsafeKeys(data)) return res.status(400).json({ error: 'Snapshot contains disallowed keys' });
+    const pub = publishProblem(data);
+    if (pub) return res.status(400).json({ error: pub });
+    assertValidConfigShape(data);
+    assignVersions(data, config);
     saveHistory(config); // snapshot current state before restoring
     config = data;
     saveConfig(config);

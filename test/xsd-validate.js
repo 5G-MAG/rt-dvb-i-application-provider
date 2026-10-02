@@ -167,6 +167,12 @@ async function main() {
   }];
   check('unicast + 5G Broadcast', buildServiceList('http://localhost:4000', hybrid), DVBI_XSD);
 
+  // An instance saved without a priority, which the configuration API accepts: @priority is
+  // optional with default 0, so the attribute is left out rather than written with no value.
+  const noPriority = JSON.parse(JSON.stringify(hybrid));
+  delete noPriority.services[0].instances[1].priority;
+  check('instance without priority', buildServiceList('http://localhost:4000', noPriority), DVBI_XSD);
+
   // 4) Every template offered by the Templates control
   console.log('\nService list (templates/):');
   checkTemplates(sample);
