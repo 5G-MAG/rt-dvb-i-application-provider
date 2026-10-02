@@ -994,14 +994,68 @@ const haveOpenssl = (() => {
   catch { return false; }
 })();
 
-test('startServer refuses to start without a certificate unless PLAIN_HTTP names the case (clause 7.3)', () => {
-  assert.throws(() => startServer({}, 0), /HTTPS_KEY_PATH and HTTPS_CERT_PATH are required/);
-  assert.throws(() => startServer({ HTTPS_KEY_PATH: '/nonexistent/key.pem', HTTPS_CERT_PATH: '/nonexistent/cert.pem' }, 0),
-    /ENOENT/, 'an unreadable certificate is an error, not a fall back to HTTP');
-  assert.throws(() => startServer({ PLAIN_HTTP: 'yes' }, 0), /PLAIN_HTTP must be one of/);
+test('a TLS configuration that is incomplete, unloadable or contradicted stops the server, no fall back to HTTP (clause 7.3)',
+  { skip: haveOpenssl ? false : 'openssl not available to make a test certificate' }, () => {
+  const { spawnSync } = require('node:child_process');
+  const { dir, key, cert } = selfSigned();
+  try {
+    assert.throws(() => startServer({ HTTPS_KEY_PATH: key }, 0), /must be set together/);
+    assert.throws(() => startServer({ HTTPS_CERT_PATH: cert }, 0), /must be set together/);
+    assert.throws(() => startServer({ HTTPS_KEY_PATH: path.join(dir, 'missing.pem'), HTTPS_CERT_PATH: cert }, 0),
+      /ENOENT/, 'an unreadable key is an error, not a fall back to HTTP');
+    const bad = path.join(dir, 'bad.pem');
+    fs.writeFileSync(bad, 'not a key');
+    assert.throws(() => startServer({ HTTPS_KEY_PATH: bad, HTTPS_CERT_PATH: cert }, 0), 'an unparsable key');
+    assert.throws(() => startServer({ HTTPS_KEY_PATH: key, HTTPS_CERT_PATH: cert, PLAIN_HTTP: 'behind-tls-proxy' }, 0),
+      /cannot be combined/, 'a certificate is not silently ignored');
+    assert.throws(() => startServer({ PLAIN_HTTP: 'yes' }, 0), /PLAIN_HTTP must be one of/);
+
+    // Started as a program, it exits 1 instead of listening.
+    const run = spawnSync(process.execPath, [path.join(ROOT, 'server.js')], {
+      env: { ...process.env, PORT: '0', HTTPS_KEY_PATH: bad, HTTPS_CERT_PATH: cert, PLAIN_HTTP: '', LOG_LEVEL: 'error' },
+      encoding: 'utf8', timeout: 10000 });
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /Not started/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
-test('HTTPS by default: TLS 1.2 and TLS 1.3 accepted, https:// endpoints in the list (clause 7.3)',
+test('with no TLS settings, the program serves plain HTTP and warns, naming the clause 7.3 private-subnet exception', async () => {
+  const { spawn } = require('node:child_process');
+  const restore = snapshotState();
+  const free = require('node:net').createServer().listen(0, '127.0.0.1');
+  await listening(free);
+  const freePort = free.address().port;
+  await new Promise(r => free.close(r));
+  const env = { ...process.env, PORT: String(freePort), LOG_LEVEL: 'warn' };
+  for (const k of ['HTTPS_KEY_PATH', 'HTTPS_CERT_PATH', 'PLAIN_HTTP']) delete env[k];
+  const child = spawn(process.execPath, [path.join(ROOT, 'server.js')], { env });
+  try {
+    let out = '';
+    const port = await new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`not listening: ${out}`)), 10000);
+      child.stdout.on('data', c => {
+        out += c;
+        const m = out.match(/http:\/\/localhost:(\d+)\/service-list\.xml/);
+        if (m) { clearTimeout(timer); resolve(Number(m[1])); }
+      });
+      child.on('exit', code => { clearTimeout(timer); reject(new Error(`exited ${code}: ${out}`)); });
+    });
+    const warning = out.split('\n').map(l => { try { return JSON.parse(l); } catch { return null; } })
+      .find(l => l && l.level === 'warn');
+    assert.ok(warning, out);
+    assert.match(warning.msg, /ETSI TS 103 770 V1\.2\.1 clause 7\.3/);
+    assert.ok(warning.msg.includes('"For the specific case that a DVB-I client connects to a DVB-I metadata endpoint ' +
+      'located on the same private subnet (see clause 3 of IETF RFC 1918 [27]), HTTP may be used without TLS."'), warning.msg);
+    assert.equal((await fetch(`http://127.0.0.1:${port}/api/health`)).status, 200);
+  } finally {
+    child.kill();
+    restore();
+  }
+});
+
+test('with a key and certificate: TLS 1.2 and TLS 1.3 accepted, https:// endpoints in the list (clause 7.3)',
   { skip: haveOpenssl ? false : 'openssl not available to make a test certificate' }, async () => {
   const tls = require('node:tls');
   const { dir, key, cert } = selfSigned();
@@ -1034,10 +1088,10 @@ test('HTTPS by default: TLS 1.2 and TLS 1.3 accepted, https:// endpoints in the 
   }
 });
 
-test('PLAIN_HTTP=behind-tls-proxy serves HTTP but writes https:// endpoints; private-subnet writes http://', async () => {
-  for (const [mode, scheme] of [['behind-tls-proxy', 'https'], ['private-subnet', 'http']]) {
+test('PLAIN_HTTP=behind-tls-proxy serves HTTP but writes https:// endpoints; unset and private-subnet write http://', async () => {
+  for (const [mode, scheme] of [['behind-tls-proxy', 'https'], ['private-subnet', 'http'], [undefined, 'http']]) {
     const restore = snapshotState();
-    const srv = startServer({ PLAIN_HTTP: mode }, 0);
+    const srv = startServer(mode ? { PLAIN_HTTP: mode } : {}, 0);
     try {
       await listening(srv);
       const res = await fetchFrom('127.0.0.250')(`http://127.0.0.1:${srv.address().port}/service-list.xml`);

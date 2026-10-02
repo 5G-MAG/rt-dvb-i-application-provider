@@ -54,8 +54,8 @@ a multi-instance deployment behind a load balancer would need a shared store, e.
 | `PORT` | `4000` | port to listen on |
 | `ADMIN_TOKEN` | unset | when set, `/api/*` requires `Authorization: Bearer <token>`. **Unset means the admin API, including logo upload, is open to anyone who can reach the server.** |
 | `LOG_LEVEL` | `info` | `error`, `warn`, `info`, `debug` |
-| `HTTPS_KEY_PATH`, `HTTPS_CERT_PATH` | unset | PEM key and certificate; required unless `PLAIN_HTTP` is set, and the server does not start if they cannot be read |
-| `PLAIN_HTTP` | unset | serve plain HTTP: `private-subnet` (clients on the same private subnet; endpoint URLs in the list are `http://`) or `behind-tls-proxy` (a reverse proxy terminates TLS; endpoint URLs are `https://`) |
+| `HTTPS_KEY_PATH`, `HTTPS_CERT_PATH` | unset | PEM key and certificate; with both set the server serves HTTPS. Only one set, or a file that cannot be loaded, and the server does not start. Neither set: plain HTTP with a warning |
+| `PLAIN_HTTP` | unset | `behind-tls-proxy`: plain HTTP behind a reverse proxy that terminates TLS, endpoint URLs in the list written `https://`. `private-subnet` is accepted and is the same as unset. Not combined with `HTTPS_KEY_PATH`/`HTTPS_CERT_PATH` |
 | `DVBI_SCHEMAS` | `test/schemas` | directory holding the XSD and classification scheme files, for `npm run test:xsd` and `npm run test:cs`. Keep it outside the working tree. Without it both checks skip and exit 0. |
 
 ## Logging
@@ -93,16 +93,20 @@ The server terminates TLS itself via `HTTPS_KEY_PATH`/`HTTPS_CERT_PATH` (PEM fil
 ```
 HTTPS_KEY_PATH=/etc/tls/key.pem HTTPS_CERT_PATH=/etc/tls/cert.pem npm start
 ```
-If they are unset, or the files cannot be read, the server logs an error and does not start; there
-is no fall back to plain HTTP. Plain HTTP has to be asked for with `PLAIN_HTTP`, naming the case:
+If only one of them is set, or a file cannot be read or parsed, the server logs an error and does
+not start; there is no fall back to plain HTTP.
 
-- `PLAIN_HTTP=behind-tls-proxy`: a reverse proxy (nginx/Caddy/ALB) terminates TLS in front of the
-  app, which is simpler for certificate rotation and is also where `ADMIN_TOKEN`-based auth should be
-  paired with network-level access control. The endpoint URLs written into the service list use
-  `https://`, the scheme clients reach the proxy with.
-- `PLAIN_HTTP=private-subnet`: the clause 7.3 exception, for clients on the same private subnet.
-  Endpoint URLs use `http://`. The server does not check where a client connects from; keeping it
-  off other networks is the operator's job.
+With neither set (`npm start`, the `Dockerfile`) the server serves plain HTTP and logs a warning at
+start that quotes the clause 7.3 same-private-subnet exception. Endpoint URLs in the list are
+`http://`. The server does not check where a client connects from; keeping it off other networks is
+the operator's job.
+
+`PLAIN_HTTP=behind-tls-proxy` is for a reverse proxy (nginx/Caddy/ALB) that terminates TLS in front
+of the app, which is simpler for certificate rotation and is also where `ADMIN_TOKEN`-based auth
+should be paired with network-level access control. The server serves plain HTTP to the proxy, logs
+no warning, and writes the endpoint URLs in the service list as `https://`, the scheme clients reach
+the proxy with. `PLAIN_HTTP=private-subnet` is still accepted and means the same as leaving
+`PLAIN_HTTP` unset. Any other value, or `PLAIN_HTTP` together with a key and certificate, is refused.
 
 TLS 1.2 and 1.3 are offered (Node's defaults). The root certificates, cipher suites, signature
 algorithms, key sizes and curves of ETSI TS 102 796 clause 11.2, which clause 7.3 refers to, are not

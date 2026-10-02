@@ -190,11 +190,14 @@ where wrong:
 - **Region `@countryCodes` is checked for format only.** It is the list's configured target country
   (`[A-Z]{3}`, comma-separated), required on publish when services have target regions; whether a
   code is assigned in ISO 3166 is not checked.
-- **TLS profile not checked.** The server serves TLS 1.2 and 1.3 (ETSI TS 103 770 V1.2.1 clause 7.3)
-  and does not start without a certificate unless `PLAIN_HTTP` is set; the cipher suites, signature
-  algorithms, key sizes and curves clause 7.3 takes from ETSI TS 102 796 clause 11.2 are not
-  configured, since that document is not held. `PLAIN_HTTP=private-subnet` does not verify that
-  clients are on the same private subnet.
+- **TLS profile not checked.** With a key and certificate the server serves TLS 1.2 and 1.3 (ETSI
+  TS 103 770 V1.2.1 clause 7.3); the cipher suites, signature algorithms, key sizes and curves
+  clause 7.3 takes from ETSI TS 102 796 clause 11.2 are not configured, since that document is not
+  held.
+- **Plain HTTP by default.** Without a key and certificate the server serves plain HTTP and logs a
+  warning quoting the clause 7.3 same-private-subnet exception; it does not verify that clients are
+  on the same private subnet, so a deployment reachable from other networks does not meet clause 7.3
+  unless TLS is configured or terminated by a proxy.
 - **On-demand programmes: what the content deep-linked XML AIT does and does not cover.**
   ETSI TS 103 770 V1.2.1 clause 6.10.8.2, table 52, row ProgramURL: "A URL location of a content
   deep-linked XML AIT for the on-demand programme." `ProgramURL` points to `/ait/program.aitx`

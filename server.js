@@ -1660,16 +1660,20 @@ app.get('/api/health', (req, res) =>
 
 // TS 103 770 V1.2.1 clause 7.3: "All HTTP transactions and connections between the DVB-I client and
 // DVB-I metadata endpoints, specifically Service List Registries, Service List Servers, Content
-// Guide Servers, described in the present document shall be performed using HTTP over TLS", except
-// that "HTTP may be used without TLS" when the client is on the same private subnet.
+// Guide Servers, described in the present document shall be performed using HTTP over TLS", with
+// one exception, quoted in PRIVATE_SUBNET_EXCEPTION below.
 //
-// So the server serves HTTPS, from the PEM files named by HTTPS_KEY_PATH and HTTPS_CERT_PATH, and
-// refuses to start without them rather than fall back to plain HTTP. Plain HTTP is served only when
-// the operator says which of the two cases applies:
-//   PLAIN_HTTP=private-subnet    clients are on the same private subnet; URLs in the list are http://
-//   PLAIN_HTTP=behind-tls-proxy  a reverse proxy terminates TLS; URLs in the list are https://
+// So the server serves HTTPS when HTTPS_KEY_PATH and HTTPS_CERT_PATH name a PEM key and
+// certificate. Only one of them set, or a key or certificate that cannot be loaded, stops the
+// server: it never falls back to plain HTTP when TLS was asked for. With neither set it serves
+// plain HTTP and logs a warning that names the exception, which the server does not check.
+// PLAIN_HTTP=behind-tls-proxy also serves plain HTTP, for a reverse proxy that terminates TLS, and
+// writes the endpoint URLs in the list as https://, the scheme clients reach the proxy with.
+// PLAIN_HTTP=private-subnet is accepted and means the same as leaving PLAIN_HTTP unset.
 // The TLS versions are Node's defaults, which offer TLS 1.2 and 1.3 (clause 7.3: servers "shall
 // support TLS version 1.2" and "should support TLS version 1.3").
+const PRIVATE_SUBNET_EXCEPTION = 'For the specific case that a DVB-I client connects to a DVB-I metadata ' +
+  'endpoint located on the same private subnet (see clause 3 of IETF RFC 1918 [27]), HTTP may be used without TLS.';
 const PLAIN_HTTP_MODES = { 'private-subnet': 'http', 'behind-tls-proxy': 'https' };
 let publicScheme = null;
 
@@ -1679,28 +1683,34 @@ function publicBase(req) {
 }
 
 function startServer(env = process.env, port = PORT) {
-  const mode = env.PLAIN_HTTP;
-  if (mode !== undefined && mode !== '') {
-    if (!PLAIN_HTTP_MODES[mode]) {
-      throw new Error(`PLAIN_HTTP must be one of ${Object.keys(PLAIN_HTTP_MODES).join(', ')} (got "${mode}")`);
-    }
-    publicScheme = PLAIN_HTTP_MODES[mode];
-    return http.createServer(app).listen(port, () => {
-      logger.info('DVB-I Application Provider and Admin Portal listening (http)', { port, plainHttp: mode });
-      console.log(`DVB-I Application Provider and Admin Portal  →  http://localhost:${port} (PLAIN_HTTP=${mode})`);
-      console.log(`Service list    →  http://localhost:${port}/service-list.xml`);
+  const mode = env.PLAIN_HTTP || undefined;
+  const keyPath = env.HTTPS_KEY_PATH, certPath = env.HTTPS_CERT_PATH;
+  if (mode !== undefined && !PLAIN_HTTP_MODES[mode]) {
+    throw new Error(`PLAIN_HTTP must be one of ${Object.keys(PLAIN_HTTP_MODES).join(', ')} (got "${mode}")`);
+  }
+  if (keyPath || certPath) {
+    if (!keyPath || !certPath) throw new Error('HTTPS_KEY_PATH and HTTPS_CERT_PATH must be set together');
+    if (mode !== undefined) throw new Error(`PLAIN_HTTP=${mode} cannot be combined with HTTPS_KEY_PATH and HTTPS_CERT_PATH`);
+    // createServer parses the key and certificate, so one that cannot be read or parsed throws here.
+    const server = https.createServer({ key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath) }, app);
+    publicScheme = 'https';
+    return server.listen(port, () => {
+      logger.info('DVB-I Application Provider and Admin Portal listening (https)', { port });
+      console.log(`DVB-I Application Provider and Admin Portal  →  https://localhost:${port}`);
     });
   }
-  const keyPath = env.HTTPS_KEY_PATH, certPath = env.HTTPS_CERT_PATH;
-  if (!keyPath || !certPath) {
-    throw new Error('HTTPS_KEY_PATH and HTTPS_CERT_PATH are required (TS 103 770 clause 7.3). To serve plain ' +
-                    'HTTP set PLAIN_HTTP=private-subnet or PLAIN_HTTP=behind-tls-proxy; see DEPLOYMENT.md.');
+  publicScheme = PLAIN_HTTP_MODES[mode || 'private-subnet'];
+  if (mode === 'behind-tls-proxy') {
+    logger.info('Serving plain HTTP behind a TLS-terminating proxy; endpoint URLs in the list are https://');
+  } else {
+    logger.warn('Serving plain HTTP without TLS. ETSI TS 103 770 V1.2.1 clause 7.3 requires HTTP over TLS ' +
+      `except: "${PRIVATE_SUBNET_EXCEPTION}" The server does not check that clients are on the same private ` +
+      'subnet. Set HTTPS_KEY_PATH and HTTPS_CERT_PATH to serve HTTPS.');
   }
-  const key = fs.readFileSync(keyPath), cert = fs.readFileSync(certPath);
-  publicScheme = 'https';
-  return https.createServer({ key, cert }, app).listen(port, () => {
-    logger.info('DVB-I Application Provider and Admin Portal listening (https)', { port });
-    console.log(`DVB-I Application Provider and Admin Portal  →  https://localhost:${port}`);
+  return http.createServer(app).listen(port, () => {
+    logger.info('DVB-I Application Provider and Admin Portal listening (http)', { port, plainHttp: mode || 'default' });
+    console.log(`DVB-I Application Provider and Admin Portal  →  http://localhost:${port}`);
+    console.log(`Service list    →  http://localhost:${port}/service-list.xml`);
   });
 }
 
