@@ -1,4 +1,13 @@
 #!/usr/bin/env node
+/*
+License: 5G-MAG Public License (v1.0)
+Authors: Jordi J. Gimenez (5G-MAG)
+Copyright: (C) 2026 5G-MAG Association
+
+For full license terms please see the LICENSE file distributed with this
+program. If this file is missing then the license can be retrieved from
+https://www.5g-mag.com/license
+*/
 /**
  * XSD conformance check for the DVB-I admin generator (optional, bring-your-own schemas).
  *
