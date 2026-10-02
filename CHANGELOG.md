@@ -1,5 +1,25 @@
 # Changelog — rt-dvb-i-application-provider
 
+## 2026-10 — Service list content (ETSI TS 103 770 V1.2.1)
+
+- **`SubscriptionPackageList`** is written whenever an instance carries a subscription package,
+  listing each package once (clause 5.1.5).
+- **Logos are JPEG or PNG.** A service's logo is signalled only when it is `image/jpeg` or
+  `image/png` (clause 5.2.6.2); the SVG letter placeholder is no longer put in the list, an unknown
+  type is no longer labelled `image/png`, and uploads accept PNG and JPEG only.
+- **`image_variant`** outside table 8 is answered 400 on every endpoint; a valid one gets no logo
+  and no programme image, since no variants exist (clause 5.2.8.2.1).
+- **One service name per language code**: a repeated or empty code is refused on save (clause 5.2.10).
+- **`LanguageList`** holds the audio languages set per service (new *Audio Languages* field), not
+  the languages of the names (table 14); service `ProviderName` carries `@xml:lang` (table 15).
+- **One applicable LCN table per region.** With regional services there is no table without
+  `TargetRegion`; each region's table also numbers the services that target no region (clause 5.5.12).
+- **Region `@countryCodes`** is the configured target country, never a code made from the region
+  identifier; publishing regional services without one is refused (table 38).
+- **Server-side Region Selection by regionID**: `?region=<regionID>` returns the list tailored to
+  that region with `@responseStatus` (`OK`, `ERROR_INVALID_REGION_ID`, `ERROR_INVALID_REQUEST`),
+  clauses 5.6.4.4 and 5.6.4.5.
+
 ## 2026-10 — Publication and versioning (ETSI TS 103 770 V1.2.1)
 
 - **The service list is served as `application/vnd.dvb.dvbisl+xml`**, the media type clause 5.1.2

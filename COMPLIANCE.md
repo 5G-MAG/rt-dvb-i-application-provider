@@ -180,6 +180,20 @@ where wrong:
 
 ## Known limitations / not done
 
+- **Server-side Region Selection supports the regionID method only** (`?region=<regionID>`, ETSI
+  TS 103 770 V1.2.1 clause 5.6.4.4), which is one of the two methods clause 5.6.4.1 accepts. The
+  postcode method needs postcode data on regions, which the editor does not hold, and the
+  receivable multiplex method is optional; requests using either are answered with the untailored
+  list and no `@responseStatus`. Advertising the method in `SRSSupport` is the registry entry's job
+  (it sits in the `ServiceListOffering`). The provider's own `TargetCountry` query parameter is
+  not a method of clause 5.6.4 and carries no `@responseStatus`.
+- **Region `@countryCodes` is checked for format only.** It is the list's configured target country
+  (`[A-Z]{3}`, comma-separated), required on publish when services have target regions; whether a
+  code is assigned in ISO 3166 is not checked.
+- **A service without a JPEG or PNG logo is published without a logo.** Clause 5.2.6.2 requires at
+  least one logo of those types; the generated letter placeholder is SVG, so it is shown in the
+  editor but not signalled in the list. Uploads are limited to PNG and JPEG.
+
 - **An existing `@CGSID` that `xs:ID` forbids is not migrated.** A write that would introduce one
   is now rejected with a message naming the value and the rule, but a list that already carries a
   bad identifier still loads, with a warning at startup. It is not rewritten silently, because

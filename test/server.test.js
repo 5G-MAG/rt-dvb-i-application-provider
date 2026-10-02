@@ -412,3 +412,159 @@ test('editor: Clone gives the copy its own UniqueIdentifier', () => {
   assert.equal(uids.length, 4);
   assert.equal(new Set(uids).size, 4, uids.join(', '));
 });
+
+// ── Service list content (TS 103 770 V1.2.1 clauses 5.1.5, 5.2.6.2, 5.2.8.2.1, 5.2.10, 5.5.1, 5.5.2,
+//    5.5.12, 5.6.2.1, 5.6.4)
+
+function regionalConfig() {
+  const cfg = twoServices();                              // a: GBR-ENG, b: GBR-ENG
+  cfg.services[1].targetRegion = 'GBR-SCT';
+  cfg.services.push({ ...JSON.parse(JSON.stringify(cfg.services[0])),
+    id: 'svc-c', uid: 'tag:test,2024:service:c', name: 'Service C', lcn: 3, targetRegion: '',
+    subscriptionPackage: 'Basic' });
+  return cfg;
+}
+
+test('SubscriptionPackageList lists each package used on a service instance once (clause 5.1.5)', () => {
+  const cfg = regionalConfig();                           // a: Premium, b: Premium, c: Basic
+  const doc = parse(buildServiceList('http://x', cfg));
+  const list = doc.find('/d:ServiceList/d:SubscriptionPackageList/d:SubscriptionPackage', NS).map(e => e.text());
+  assert.deepEqual(list.sort(), ['Basic', 'Premium']);
+  for (const s of cfg.services) s.subscriptionPackage = '';
+  assert.equal(parse(buildServiceList('http://x', cfg)).find('//d:SubscriptionPackageList', NS).length, 0);
+});
+
+test('service logo is signalled only as image/jpeg or image/png (clause 5.2.6.2)', () => {
+  const logoTypes = logoUrl => {
+    const doc = parse(buildServiceList('http://x', sampleConfig({ logoUrl })));
+    return doc.find('//d:Service/d:RelatedMaterial[tva:HowRelated/@href="urn:dvb:metadata:cs:HowRelatedCS:2021:1001.2"]/tva:MediaLocator/tva:MediaUri', NS)
+      .map(e => e.attr('contentType').value());
+  };
+  assert.deepEqual(logoTypes('/logos/uploaded/a.png'), ['image/png']);
+  assert.deepEqual(logoTypes('https://img.example.com/a.JPG'), ['image/jpeg']);
+  assert.deepEqual(logoTypes('data:image/png;base64,iVBORw0KGgo='), ['image/png']);
+  for (const other of ['', '/logos/uploaded/a.svg', 'https://img.example.com/a.webp',
+    'https://img.example.com/a.gif', 'http://localhost:4000/logos/svc-a']) {
+    assert.deepEqual(logoTypes(other), [], `"${other}" is not a JPEG or PNG logo`);
+  }
+});
+
+test('logo upload accepts PNG and JPEG and refuses other image types with 400', () => withServer(async base => {
+  assert.equal((await putConfig(base, sampleConfig())).status, 200);
+  const upload = (name, type) => {
+    const form = new FormData();
+    form.append('logo', new Blob([Buffer.from('x')], { type }), name);
+    return fetch(`${base}/api/logos/upload/svc-a`, { method: 'POST', body: form });
+  };
+  for (const [name, type] of [['a.svg', 'image/svg+xml'], ['a.webp', 'image/webp'], ['a.gif', 'image/gif']]) {
+    const res = await upload(name, type);
+    assert.equal(res.status, 400, name);
+    assert.match((await res.json()).error, /PNG or JPEG/);
+  }
+  assert.equal((await upload('a.jpg', 'image/jpeg')).status, 200);
+}));
+
+test('image_variant outside table 8 is answered 400 on every endpoint (clause 5.2.8.2.1)', () => withServer(async base => {
+  const cfg = sampleConfig({ epgPrograms: [{ title: 'T', dur: 60, desc: 'D', image: 'https://img.example.com/p.jpg' }] });
+  assert.equal((await putConfig(base, cfg)).status, 200);
+  const sid = encodeURIComponent(cfg.services[0].uid);
+  for (const p of ['/service-list.xml', '/logos/svc-a', `/epg/schedule?sid=${sid}`, '/5gmag.png']) {
+    const sep = p.includes('?') ? '&' : '?';
+    for (const bad of ['16x9', 'SQUARE_COLOUR', '', 'square_colour&image_variant=4x3_colour']) {
+      const res = await fetch(`${base}${p}${sep}image_variant=${bad}`);
+      assert.equal(res.status, 400, `${p} image_variant=${bad}`);
+    }
+    assert.notEqual((await fetch(`${base}${p}${sep}image_variant=square_colour`)).status, 400, `${p} valid variant`);
+  }
+}));
+
+test('a requested image variant that does not exist returns no image for the item (clause 5.2.8.2.1)', () => withServer(async base => {
+  const cfg = sampleConfig({ logoUrl: '/logos/uploaded/a.png',
+    epgPrograms: [{ title: 'T', dur: 60, desc: 'D', image: 'https://img.example.com/p.jpg' }] });
+  assert.equal((await putConfig(base, cfg)).status, 200);
+  const logos = async q => parse(await (await fetch(`${base}/service-list.xml${q}`)).text())
+    .find('//d:Service/d:RelatedMaterial', NS).length;
+  assert.equal(await logos(''), 1, 'the default logo without a variant');
+  assert.equal(await logos('?image_variant=16x9_white'), 0);
+  const sched = await (await fetch(`${base}/epg/schedule?sid=${encodeURIComponent(cfg.services[0].uid)}&image_variant=16x9_white`)).text();
+  assert.equal(parse(sched).find('//tva:RelatedMaterial', NS).length, 0);
+}));
+
+test('PUT /api/config refuses a service name language that is empty or used twice (clause 5.2.10)', () => withServer(async base => {
+  for (const [languages, ok] of [
+    [[{ lang: 'en', name: 'A' }, { lang: 'fr', name: 'B' }], true],
+    [[{ lang: 'en', name: 'A' }, { lang: 'en', name: 'B' }], false],
+    [[{ lang: 'en', name: 'A' }, { lang: '', name: 'B' }], false],
+  ]) {
+    const res = await putConfig(base, sampleConfig({ languages }));
+    assert.equal(res.status, ok ? 200 : 400, JSON.stringify(languages));
+    if (!ok) assert.match((await res.json()).error, /5\.2\.10/);
+  }
+}));
+
+test('LanguageList holds the configured audio languages, not the name languages (table 14)', () => {
+  const cfg = sampleConfig({ languages: [{ lang: 'de', name: 'A' }], audioLanguages: ['en', 'fr'] });
+  const langs = doc => doc.find('/d:ServiceList/d:LanguageList/d:Language', NS).map(e => e.text());
+  assert.deepEqual(langs(parse(buildServiceList('http://x', cfg))), ['en', 'fr']);
+  delete cfg.services[0].audioLanguages;
+  assert.equal(parse(buildServiceList('http://x', cfg)).find('//d:LanguageList', NS).length, 0,
+    'no audio language configured, no LanguageList');
+});
+
+test('service ProviderName carries @xml:lang (table 15)', () => {
+  const doc = parse(buildServiceList('http://x', sampleConfig()));
+  const pn = doc.get('//d:Service/d:ProviderName', NS);
+  assert.equal(pn.attr('lang').value(), 'en');
+});
+
+test('one applicable LCN table per TargetRegion: no table without TargetRegion beside regional ones (clause 5.5.12)', () => {
+  const doc = parse(buildServiceList('http://x', regionalConfig()));
+  const tables = doc.find('//d:LCNTable', NS);
+  assert.equal(tables.length, 2);
+  for (const t of tables) {
+    assert.equal(t.find('./d:TargetRegion', NS).length, 1, 'every table names its region');
+    assert.ok(t.find('./d:LCN', NS).some(l => l.attr('serviceRef').value() === 'tag:test,2024:service:c'),
+      'the service that targets no region is numbered in every region\'s table');
+  }
+  const cfg = regionalConfig();
+  for (const s of cfg.services) s.targetRegion = '';
+  const flat = parse(buildServiceList('http://x', cfg)).find('//d:LCNTable', NS);
+  assert.equal(flat.length, 1);
+  assert.equal(flat[0].find('./d:TargetRegion', NS).length, 0);
+});
+
+test('Region@countryCodes is the configured country, never derived from the region id (table 38)', () => withServer(async base => {
+  const cfg = sampleConfig({ targetRegion: 'EUR' });
+  cfg.targetCountry = 'FRA';
+  assert.equal(parse(buildServiceList('http://x', cfg)).get('//d:Region', NS).attr('countryCodes').value(), 'FRA');
+  cfg.targetCountry = '';
+  const xml = buildServiceList('http://x', cfg);
+  assert.ok(!/countryCodes="(EUR|ZZZ)"/.test(xml), 'no code made up from the region identifier');
+  const res = await putConfig(base, cfg);
+  assert.equal(res.status, 400, 'regions without a country are refused on publish');
+  assert.match((await res.json()).error, /countryCodes/);
+}));
+
+test('Server-side Region Selection by regionID with @responseStatus (clauses 5.6.4.4, 5.6.4.5)', () => withServer(async base => {
+  assert.equal((await putConfig(base, regionalConfig())).status, 200);
+  const get = async q => parse(await (await fetch(`${base}/service-list.xml${q}`)).text());
+  const status = doc => doc.get('/d:ServiceList', NS).attr('responseStatus');
+  const uids = doc => doc.find('//d:Service/d:UniqueIdentifier', NS).map(e => e.text()).sort();
+
+  const plain = await get('');
+  assert.equal(status(plain), null, 'no SRS query, no @responseStatus');
+  assert.equal(uids(plain).length, 3);
+
+  const tailored = await get('?region=GBR-SCT');
+  assert.equal(status(tailored).value(), 'OK');
+  assert.deepEqual(uids(tailored), ['tag:test,2024:service:b', 'tag:test,2024:service:c']);
+  assert.deepEqual(tailored.find('//d:Region', NS).map(r => r.attr('regionID').value()), ['GBR-SCT']);
+  assert.equal(tailored.find('//d:LCNTable', NS).length, 1);
+
+  const unknown = await get('?region=FRA-IDF');
+  assert.equal(status(unknown).value(), 'ERROR_INVALID_REGION_ID');
+  assert.equal(uids(unknown).length, 3, 'the error response is the untailored list');
+
+  assert.equal(status(await get('?region=')).value(), 'ERROR_INVALID_REQUEST');
+  assert.equal(status(await get('?region=GBR-SCT&region=GBR-ENG')).value(), 'ERROR_INVALID_REQUEST');
+}));

@@ -160,8 +160,66 @@ function priorityProblem(cfg) {
   return null;
 }
 
+// Clause 5.2.10: "Each such element shall only be repeated once per language code." The service
+// names are the one multilingual element configured per language, so each row needs its own code.
+function languagesProblem(cfg) {
+  for (const [i, s] of (cfg.services || []).entries()) {
+    const seen = new Set();
+    for (const l of ((s && s.languages) || [])) {
+      const code = String((l && l.lang) || '').trim();
+      if (!code) return `services[${i}]: a service name has no language code (TS 103 770 clause 5.2.10).`;
+      if (seen.has(code)) {
+        return `services[${i}]: language code "${code}" is used for more than one service name; ` +
+               `each element shall only be repeated once per language code (TS 103 770 clause 5.2.10).`;
+      }
+      seen.add(code);
+    }
+    if (s && s.audioLanguages != null &&
+        (!Array.isArray(s.audioLanguages) || s.audioLanguages.some(l => typeof l !== 'string' || !l.trim()))) {
+      return `services[${i}].audioLanguages must be a list of language codes.`;
+    }
+  }
+  return null;
+}
+
+// The country codes of the list's regions (table 38, CountryRegionType@countryCodes), typed
+// tva:ISO-3166-List. Only the format is checked here; whether a code is assigned in ISO 3166 is not.
+function listCountry(cfg) {
+  const cc = String(cfg.targetCountry || '').trim().toUpperCase();
+  return /^[A-Z]{3}(,[A-Z]{3})*$/.test(cc) ? cc : null;
+}
+
+function countryProblem(cfg) {
+  const regional = (cfg.services || []).some(s => s && s.enabled !== false && s.targetRegion);
+  if (regional && !listCountry(cfg)) {
+    return 'Services have target regions, so the region list needs the countries that make up its ' +
+           'regions (TS 103 770 clause 5.6.2.1, table 38, @countryCodes): set the list\'s target ' +
+           'country to ISO 3166 alpha-3 codes, for example GBR.';
+  }
+  return null;
+}
+
 function publishProblem(cfg) {
-  return uidProblem(cfg) || priorityProblem(cfg);
+  return uidProblem(cfg) || priorityProblem(cfg) || languagesProblem(cfg) || countryProblem(cfg);
+}
+
+// Clause 5.2.8.2.1, table 8: the permissible image_variant values. "The list of image_variant
+// query parameters listed in table 8 shall be used by ALL endpoints to validate image_variant
+// query parameters."
+const IMAGE_VARIANTS = new Set([
+  '16x9_colour', 'square_colour', '4x3_colour', '16x9_white', 'square_white',
+  '16x9_colour_light', 'square_colour_light', '16x9_colour_dark', 'square_colour_dark',
+]);
+
+// Server-side Region Selection, regionID method (clause 5.6.4.4: <ServiceList_URL>?region=<regionID>).
+// Returns null when the request asks for none, otherwise the table 38a @responseStatus and, when
+// the region is one this list defines, the region to tailor to.
+function srsRequest(query, cfg) {
+  if (!('region' in query)) return null;
+  const r = query.region;
+  if (typeof r !== 'string' || !r) return { status: 'ERROR_INVALID_REQUEST' };
+  const known = (cfg.services || []).some(s => s && s.enabled !== false && s.targetRegion === r);
+  return known ? { status: 'OK', region: r } : { status: 'ERROR_INVALID_REGION_ID' };
 }
 
 function assertValidConfigShape(cfg) {
@@ -245,9 +303,17 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.json({ limit: '2mb' }));
-// Uploaded logos are operator-supplied files served from this origin, and SVG is among the image
-// types accepted, so an uploaded SVG carrying a <script> would execute here if a browser navigated
-// to it directly. It cannot when it is only ever an <img> source, which is how the editor and the
+// Clause 5.2.8.2.1: "If any other value is provided, then an HTTP 400 Bad Request error shall be
+// returned." Checked before every route, static files included, since the clause names ALL endpoints.
+app.use((req, res, next) => {
+  if (!('image_variant' in req.query)) return next();
+  const v = req.query.image_variant;
+  if (typeof v === 'string' && IMAGE_VARIANTS.has(v)) return next();
+  return res.status(400).json({ error: 'image_variant is not a value of TS 103 770 table 8' });
+});
+// Uploaded logos are operator-supplied files served from this origin. The upload takes PNG and JPEG
+// only, but the directory serves whatever file is in it, and an SVG there carrying a <script> would
+// execute here if a browser navigated to it directly. It cannot when it is only ever an <img> source, which is how the editor and the
 // generated list use it, but nothing stops someone opening the URL. These headers make the file
 // inert whatever it contains: no scripts, no plugins, no same-origin context, and no content-type
 // sniffing. Applied before the static handler so they are set on every response it produces.
@@ -315,21 +381,25 @@ const logoStorage = multer.diskStorage({
   },
 });
 
-const LOGO_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg']);
+// An uploaded logo is the service's only logo, and clause 5.2.6.2 requires at least one to be
+// image/jpeg or image/png, so those are the types accepted.
+const LOGO_EXTS = new Set(['.png', '.jpg', '.jpeg']);
 const logoUpload = multer({
   storage: logoStorage,
   limits: { fileSize: 2 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
-    if (/^image\//.test(file.mimetype) && LOGO_EXTS.has(ext)) cb(null, true);
-    else cb(new Error('Images only (png, jpg, jpeg, gif, webp, svg)'));
+    if (/^image\/(png|jpeg)$/.test(file.mimetype) && LOGO_EXTS.has(ext)) cb(null, true);
+    else cb(new Error('PNG or JPEG images only (TS 103 770 clause 5.2.6.2)'));
   },
 });
 
 app.post('/api/logos/upload/:id', requireAdmin, rateLimit('mutate', 30, 60000), (req, res, next) => {
   if (!/^[a-z0-9-]+$/i.test(req.params.id)) return res.status(400).json({ error: 'Invalid service ID' });
   next();
-}, logoUpload.single('logo'), (req, res) => {
+}, (req, res, next) => logoUpload.single('logo')(req, res, err =>
+  err ? res.status(400).json({ error: err.message }) : next()
+), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
   const svc = config.services.find(s => s.id === req.params.id);
   if (!svc) {
@@ -425,10 +495,14 @@ const GENRE_CS = {
 };
 const GENRE_CS_DEFAULT = `${CONTENT_CS}:3.1.3`; // General non-fiction
 
+// The image Media Type of a logo URL: from the media type of an RFC 2397 data URL, otherwise from
+// the file extension. null when neither says, since a type that is not known cannot be signalled.
 function detectMimeType(url) {
+  const data = /^data:([^;,]+)/i.exec(url || '');
+  if (data) return data[1].toLowerCase();
   const ext = (url || '').split('?')[0].split('.').pop().toLowerCase();
   const map = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml' };
-  return map[ext] || 'image/png';
+  return map[ext] || null;
 }
 
 function buildServiceList(base, cfg, opts = {}) {
@@ -445,18 +519,28 @@ function buildServiceList(base, cfg, opts = {}) {
   if (requestedCountry) {
     enabled = enabled.filter(s => !s.targetRegion || s.targetRegion.toUpperCase().startsWith(requestedCountry));
   }
+  // Server-side Region Selection by region identifier (clause 5.6.4.4): a list tailored to one
+  // region holds that region's services and those that target no region. opts.srs comes from
+  // srsRequest(); on an error status the list is the untailored one.
+  const srs = opts.srs || null;
+  if (srs && srs.region) enabled = enabled.filter(s => !s.targetRegion || s.targetRegion === srs.region);
 
-  // Build per-region LCNTables: one table per TargetRegion, plus a global table for services
-  // with none. TS 103 770 V1.2.1 clause 5.5.12, table 25, row TargetRegion: a table names the
-  // regions where it applies, and a table without one is applicable anywhere.
+  // LCN tables. TS 103 770 V1.2.1 clause 5.5.12: "Therefore, there shall be only one applicable
+  // LCNTable in the Service List:" in total, or one per unique TargetRegion. Table 25 makes a table
+  // without TargetRegion "applicable anywhere", so once any table names a region there can be no
+  // such table: each region's table also numbers the services that target no region.
   const regionLCNMap = {};
   const globalLCNEntries = [];
+  for (const s of enabled) {
+    if (s.targetRegion && !regionLCNMap[s.targetRegion]) regionLCNMap[s.targetRegion] = [];
+  }
   for (const s of enabled) {
     if (s.lcn == null) continue;
     const entry = { lcn: s.lcn, uid: s.uid };
     if (s.targetRegion) {
-      if (!regionLCNMap[s.targetRegion]) regionLCNMap[s.targetRegion] = [];
       regionLCNMap[s.targetRegion].push(entry);
+    } else if (Object.keys(regionLCNMap).length) {
+      for (const entries of Object.values(regionLCNMap)) entries.push(entry);
     } else {
       globalLCNEntries.push(entry);
     }
@@ -480,32 +564,30 @@ ${rows}
   }
   if (!lcnTableListContent) lcnTableListContent = '\n    <LCNTable/>';
 
-  // RegionList: RegionListType requires @version; Region is CountryRegionType requiring @countryCodes
-  // (tva:ISO-3166-List = comma-separated [A-Z]{3} codes). Source the country from config; fall back
-  // to the regionID's leading token (e.g. GBR-ENG -> GBR) when no list-level country is configured.
+  // RegionList: RegionListType requires @version; Region is CountryRegionType. Table 38 defines
+  // @countryCodes as "The list of countries that make up the region", so it is the list's
+  // configured country (see countryProblem), never derived from the region identifier.
   const regions = [...new Set(enabled.filter(s => s.targetRegion).map(s => s.targetRegion))];
-  const listCC  = (cfg.targetCountry || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3);
+  const listCC  = listCountry(cfg);
   const regionList = regions.length ? `
   <RegionList version="${xe(version)}">
 ${regions.map(r => {
-    const cc = listCC || (String(r).split(/[-_ ]/)[0] || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 3) || 'ZZZ';
-    return `    <Region regionID="${xe(r)}" countryCodes="${xe(cc)}" xml:lang="en">
+    const ccAttr = listCC ? ` countryCodes="${xe(listCC)}"` : '';
+    return `    <Region regionID="${xe(r)}"${ccAttr} xml:lang="en">
       <RegionName>${xe(r)}</RegionName>
     </Region>`;
   }).join('\n')}
   </RegionList>` : '';
 
-  // LanguageList: BCP-47 tags for which metadata is available (TS 103 770 §5.5.1)
-  const langSet = new Set([cfg.listLang || 'en']);
-  for (const s of enabled) {
-    if (s.languages?.length) {
-      for (const l of s.languages) if (l.lang) langSet.add(l.lang);
-    }
-  }
-  const languageListEl = `
+  // LanguageList: table 14 defines it as "A list of audio languages related to the Service List's
+  // services.", so it is built from each service's configured audio languages and left out when
+  // none is configured.
+  const langSet = new Set();
+  for (const s of enabled) for (const l of (s.audioLanguages || [])) langSet.add(l);
+  const languageListEl = langSet.size ? `
   <LanguageList>
 ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
-  </LanguageList>`;
+  </LanguageList>` : '';
 
   const serviceBlocks = enabled.map(s => {
     // logoUrl is either absolute (what the editor's "Logo Image URL" field invites) or a path on
@@ -514,10 +596,8 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
     // of the form "http://hosthttp://host/...", which is not a valid xs:anyURI and fails schema
     // validation, while still looking plausible in the rendered XML.
     const logoAbs  = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(s.logoUrl || '') || (s.logoUrl || '').startsWith('//');
-    const logoUri  = s.logoUrl
-      ? (logoAbs ? xe(s.logoUrl) : `${xe(base)}${xe(s.logoUrl)}`)
-      : `${xe(base)}/logos/${xe(s.id)}`;
-    const logoType = s.logoUrl ? detectMimeType(s.logoUrl) : 'image/svg+xml';
+    const logoUri  = logoAbs ? xe(s.logoUrl) : `${xe(base)}${xe(s.logoUrl || '')}`;
+    const logoType = s.logoUrl ? detectMimeType(s.logoUrl) : null;
 
     // ServiceInstance blocks — XSD sequence: DisplayName, ContentProtection, ContentAttributes, delivery
     const instanceBlocks = (s.instances || []).map(inst => {
@@ -634,16 +714,23 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
       ? s.languages.map(l => `\n    <ServiceName xml:lang="${xe(l.lang)}">${xe(l.name)}</ServiceName>`).join('')
       : `\n    <ServiceName>${xe(s.name)}</ServiceName>`;
 
-    const providerEl = `\n    <ProviderName>${xe(s.provider)}</ProviderName>`;
+    // Table 15, row ProviderName: "This element should include an @xml:lang attribute to identify
+    // the language being used." The provider name is not configured per language, so it is in the
+    // list's own language.
+    const providerEl = `\n    <ProviderName xml:lang="${xe(cfg.listLang || 'en')}">${xe(s.provider)}</ProviderName>`;
 
     // Logo RelatedMaterial — HowRelated and MediaLocator are in TVA namespace (TS 103 770 §6.10 / TS 102 822)
-    const logoEl = `
+    // Clause 5.2.6.2: "At least one service logo shall be provided with the Media Type image/jpeg or
+    // image/png for compatibility purposes". A service has one logo, so it is signalled only when it
+    // is one of those two; the generated placeholder at /logos/:id is SVG and is not signalled.
+    // No image variants exist here, so a request naming one gets no logo (clause 5.2.8.2.1).
+    const logoEl = !opts.imageVariant && (logoType === 'image/jpeg' || logoType === 'image/png') ? `
     <RelatedMaterial>
       <tva:HowRelated href="urn:dvb:metadata:cs:HowRelatedCS:2021:1001.2"/>
       <tva:MediaLocator>
         <tva:MediaUri contentType="${logoType}">${logoUri}</tva:MediaUri>
       </tva:MediaLocator>
-    </RelatedMaterial>`;
+    </RelatedMaterial>` : '';
 
     // Linked application RelatedMaterial (TS 103 770 V1.2.1 clause 5.2.3.1): app launched by the
     // receiver.
@@ -695,6 +782,18 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
   </Service>`;
   }).join('');
 
+  // Clause 5.1.5: "When SubscriptionPackage elements are used in a Service List, a
+  // SubscriptionPackageList element shall be defined (see clause 5.5.1 and 5.5.25), containing a
+  // list of all unique SubscriptionPackage elements present in the LCN tables and/or Service
+  // Instances within the Service List." Packages are only written on service instances.
+  const packages = [...new Set(enabled
+    .filter(s => s.subscriptionPackage && (s.instances || []).length)
+    .map(s => s.subscriptionPackage))];
+  const subPkgListEl = packages.length ? `
+  <SubscriptionPackageList>
+${packages.map(p => `    <SubscriptionPackage>${xe(p)}</SubscriptionPackage>`).join('\n')}
+  </SubscriptionPackageList>` : '';
+
   // Per-service ContentGuideSources for services with a custom EPG URL
   const perSvcCGS = enabled
     .filter(s => s.customEpgUrl)
@@ -714,7 +813,7 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
   xmlns:tva="urn:tva:metadata:2024"
   xmlns:dvbisd-t="urn:dvb:metadata:servicediscovery-types:2023"
   id="${xe(listId)}"
-  version="${xe(version)}" xml:lang="${xe(cfg.listLang || 'en')}">
+  version="${xe(version)}"${srs ? ` responseStatus="${xe(srs.status)}"` : ''} xml:lang="${xe(cfg.listLang || 'en')}">
 
   <Name>${xe(cfg.listName)}</Name>
   <ProviderName>${xe(cfg.providerName)}</ProviderName>${languageListEl}${regionList}
@@ -733,7 +832,7 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
       </ProgramInfoEndpoint>
     </ContentGuideSource>${perSvcCGS}
   </ContentGuideSourceList>
-${serviceBlocks}
+${serviceBlocks}${subPkgListEl}
 
 </ServiceList>`;
 }
@@ -787,7 +886,9 @@ app.get('/service-list.xml', (req, res) => {
   res.setHeader('Content-Type', SERVICE_LIST_MEDIA_TYPE);
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Last-Modified', lastSaved.toUTCString());
-  res.send(buildServiceList(base, config, { targetCountry }));
+  const srs = srsRequest(req.query, config);
+  const imageVariant = req.query.image_variant || null;
+  res.send(buildServiceList(base, config, { targetCountry, srs, imageVariant }));
 });
 
 // ── EPG schedule ──────────────────────────────────────────────────────────────
@@ -847,8 +948,9 @@ app.get('/epg/schedule', (req, res) => {
     if (!seriesCrids[key]) seriesCrids[key] = `crid://dvbi.example.com/2024/series/${++_sIdx}`;
   }
 
+  // No image variants exist here, so a request naming one gets no programme image (clause 5.2.8.2.1).
   const progInfo = sched.map(p => {
-    const imgEl = p.image
+    const imgEl = p.image && !req.query.image_variant
       ? `\n        <RelatedMaterial>
           <HowRelated href="urn:tva:metadata:cs:HowRelatedCS:2012:19"/>
           <MediaLocator><MediaUri>${xe(p.image)}</MediaUri></MediaLocator>

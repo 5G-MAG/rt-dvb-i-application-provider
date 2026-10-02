@@ -173,6 +173,22 @@ async function main() {
   delete noPriority.services[0].instances[1].priority;
   check('instance without priority', buildServiceList('http://localhost:4000', noPriority), DVBI_XSD);
 
+  // The comprehensive sample with its HLS instances left out, so that its regions, subscription
+  // packages, audio languages, PNG logo and a region-tailored response are checked against the
+  // base schema too.
+  console.log('\nService list (regional, DASH and multicast only):');
+  const regional = JSON.parse(JSON.stringify(sample));
+  for (const s of regional.services) {
+    s.instances = s.instances.filter(i => i.type !== 'hls');
+    s.audioLanguages = ['en'];
+  }
+  regional.services[0].logoUrl = '/logos/uploaded/svc-a.png';
+  check('regional', buildServiceList('http://localhost:4000', regional), DVBI_XSD);
+  check('regional, ?region=GBR-ENG', buildServiceList('http://localhost:4000', regional,
+    { srs: { status: 'OK', region: 'GBR-ENG' } }), DVBI_XSD);
+  check('regional, ?region=unknown', buildServiceList('http://localhost:4000', regional,
+    { srs: { status: 'ERROR_INVALID_REGION_ID' } }), DVBI_XSD);
+
   // 4) Every template offered by the Templates control
   console.log('\nService list (templates/):');
   checkTemplates(sample);

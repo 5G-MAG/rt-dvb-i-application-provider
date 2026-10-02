@@ -521,7 +521,7 @@
       <div id="logo-upload-wrap" hidden>
         <div style="font-size:0.78rem;color:var(--text-3);margin-bottom:0.4rem">Or upload an image file (saved on this server):</div>
         <div class="logo-upload-row">
-          <input type="file" id="logo-file-input" accept="image/*" style="font-size:0.82rem;color:var(--text-2)"/>
+          <input type="file" id="logo-file-input" accept="image/png,image/jpeg" style="font-size:0.82rem;color:var(--text-2)"/>
           <button class="logo-upload-btn" onclick="uploadLogo()">Upload</button>
           <button class="logo-upload-btn" id="logo-remove-btn" hidden onclick="removeLogo()" style="color:var(--danger)">Remove</button>
           <span id="logo-upload-status" style="font-size:0.78rem;color:var(--text-3)"></span>
@@ -548,6 +548,10 @@
         <div class="field">
           <label>Subscription Package <span style="font-weight:400">(set to gate a service; leave blank if free-to-air)</span></label>
           <input id="m-subpkg" type="text" placeholder="e.g. Premium, Sports, Basic"/>
+        </div>
+        <div class="field">
+          <label>Audio Languages <span style="font-weight:400">(comma-separated; published in the list's LanguageList)</span></label>
+          <input id="m-audio-langs" type="text" placeholder="e.g. en, fr"/>
         </div>
         <div class="field">
           <label>Custom EPG URL <span style="font-weight:400">(overrides list EPG for this service)</span></label>
@@ -897,6 +901,7 @@ function openModal(idx, preset) {
   document.getElementById('m-logo-bg').value     = svc.logoBg      || '#2c3e50';
   document.getElementById('m-logo-url').value    = svc.logoUrl     || '';
   document.getElementById('m-region').value      = svc.targetRegion|| '';
+  document.getElementById('m-audio-langs').value = (svc.audioLanguages || []).join(', ');
   document.getElementById('m-subpkg').value      = svc.subscriptionPackage || '';
   document.getElementById('m-epg-url').value     = svc.customEpgUrl || '';
   document.getElementById('m-avail-from').value    = toLocalInput(svc.availableFrom);
@@ -1364,6 +1369,7 @@ function saveService() {
     languages:     langs,
     targetRegion:  document.getElementById('m-region').value.trim(),
     subscriptionPackage: document.getElementById('m-subpkg').value.trim(),
+    audioLanguages: document.getElementById('m-audio-langs').value.split(',').map(l => l.trim()).filter(Boolean),
     customEpgUrl:  document.getElementById('m-epg-url').value.trim(),
     availableFrom: availFromRaw ? new Date(availFromRaw).toISOString() : null,
     availableTo:   availToRaw   ? new Date(availToRaw).toISOString()   : null,
