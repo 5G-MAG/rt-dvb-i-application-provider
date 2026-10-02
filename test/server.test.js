@@ -267,6 +267,18 @@ test('buildServiceList: a 5G Broadcast instance is IdentifierBasedDeliveryParame
   assert.ok(!xml.includes('5g-mag:metadata'), 'no 5G-MAG namespace is declared');
 });
 
+test('buildServiceList: a 5G Broadcast instance whose locator is not an MBMS URL is never published', () => {
+  const xml = buildServiceList('http://x', sampleConfig({
+    instances: [
+      { id: 'i1', label: '5G', type: 'mbms', priority: 1, url: 'mbms://example.com/a b', drmSystems: [] },
+      { id: 'i2', label: 'DASH', type: 'dash', priority: 2, url: 'https://example.com/m.mpd', drmSystems: [] },
+    ],
+  }));
+  const doc = parse(xml);
+  assert.equal(doc.find('//d:IdentifierBasedDeliveryParameters', NS).length, 0);
+  assert.equal(doc.find('//d:ServiceInstance', NS).length, 1, 'the DASH instance is still published');
+});
+
 test('PUT /api/config refuses an instance whose mbms locator is not an MBMS URL', async () => {
   const { app } = require('../server.js');
   const server = app.listen(0);

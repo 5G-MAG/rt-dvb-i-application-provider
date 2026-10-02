@@ -869,6 +869,10 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
       // some component of the element value", here the mbms scheme.
       // A unicast copy of the same service is simply another instance with a lower @priority.
       if (inst.type === 'mbms') {
+        // Never published with a locator that is not an MBMS URL. Saving refuses one; a list loaded
+        // at start-up or edited by hand can still hold one, and that instance is left out (the
+        // start-up log names it) so the server keeps running and the editor can correct it.
+        if (mbmsLocatorProblem(inst.url)) return '';
         return `${head}
       <IdentifierBasedDeliveryParameters>${xe(inst.url)}</IdentifierBasedDeliveryParameters>
     </ServiceInstance>`;
