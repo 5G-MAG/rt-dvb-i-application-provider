@@ -3,7 +3,7 @@ process.env.LOG_LEVEL = process.env.LOG_LEVEL || 'error';
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const libxml = require('libxmljs2');
-const { buildServiceList, buildSchedule, msDur, cgsidProblem } = require('../server.js');
+const { buildServiceList, buildSchedule, msDur, cgsidProblem, mbmsLocatorProblem } = require('../server.js');
 const crypto = require('node:crypto');
 
 const NS = { d: 'urn:dvb:metadata:servicediscovery:2024', tva: 'urn:tva:metadata:2024' };
@@ -136,6 +136,55 @@ test('cgsidProblem: a service id becomes a CGSID only when it has a custom guide
 // this origin could carry script. These headers make it inert whatever it contains. The file has to
 // exist for the test to mean anything: on a 404 Express's own final handler replaces these headers
 // with its own, which is fine for an error page but is not what is under test here.
+test('mbmsLocatorProblem: accepts the MBMS URL forms of TS 26.347 clauses 8.2.3 and 8.2.4', () => {
+  for (const u of [
+    'mbms://example.com/userservice/1',
+    'mbms://www.example.com/',
+    'mbms://service1000.mbms.operator.com&label=http://www.example.com/videos/sample.mp4',
+    'mbms://rom.3gpp.org&tmgi=901056&serviceArea=40201&frequency=68616&subCarrierSpacing=1.25&bandwidth=8',
+  ]) assert.equal(mbmsLocatorProblem(u), null, u);
+});
+
+test('mbmsLocatorProblem: rejects what clause 8.2.2 does not allow', () => {
+  for (const u of [
+    'urn:3gpp:mbms:service:hybrid',          // not the mbms scheme
+    'https://example.com/manifest.mpd',      // not the mbms scheme
+    'mbms://',                               // no authority
+    'mbms://example.com/a?x=1',              // a query is not part of the prefix
+    'mbms://example.com&foo=1',              // mid-part pairs outside the ROM form
+    'mbms://example.com&label=not a uri',    // suffix is not a URI
+  ]) assert.ok(mbmsLocatorProblem(u), u);
+});
+
+test('buildServiceList: a 5G Broadcast instance is IdentifierBasedDeliveryParameters holding the mbms:// URL', () => {
+  const url = 'mbms://service1000.mbms.operator.com&label=http://www.example.com/videos/sample.mp4';
+  const xml = buildServiceList('http://x', sampleConfig({
+    instances: [{ id: 'i1', label: '5G', type: 'mbms', priority: 1, url, drmSystems: [] }],
+  }));
+  const doc = parse(xml);
+  const el = doc.find('//d:ServiceInstance/d:IdentifierBasedDeliveryParameters', NS);
+  assert.equal(el.length, 1);
+  assert.equal(el[0].text(), url);
+  assert.equal(doc.find('//d:OtherDeliveryParameters', NS).length, 0, 'no extension point is used');
+  assert.ok(!xml.includes('5g-mag:metadata'), 'no 5G-MAG namespace is declared');
+});
+
+test('PUT /api/config refuses an instance whose mbms locator is not an MBMS URL', async () => {
+  const { app } = require('../server.js');
+  const server = app.listen(0);
+  await new Promise(r => server.once('listening', r));
+  try {
+    const cfg = sampleConfig({
+      instances: [{ id: 'i1', label: '5G', type: 'mbms', priority: 1, url: 'urn:3gpp:mbms:service:hybrid', drmSystems: [] }],
+    });
+    const res = await fetch(`http://127.0.0.1:${server.address().port}/api/config`, {
+      method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify(cfg),
+    });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /not an MBMS URL/);
+  } finally { server.close(); }
+});
+
 test('uploaded logos are served with headers that neutralise an active SVG', async () => {
   const fs2 = require('node:fs');
   const path2 = require('node:path');

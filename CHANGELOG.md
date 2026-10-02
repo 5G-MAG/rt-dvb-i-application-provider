@@ -1,5 +1,17 @@
 # Changelog — rt-dvb-i-application-provider
 
+## 2026-10 — 5G Broadcast instances without a local extension
+
+- **A 5G Broadcast instance is `IdentifierBasedDeliveryParameters` holding its `mbms://` URL.** It
+  was emitted as `OtherDeliveryParameters` with a 5G-MAG `xsi:type`
+  (`urn:5g-mag:metadata:dvbi-5g:2026`). ETSI TS 103 770 V1.2.1 table 16 already defines an element
+  for "An identifier in the form of a locator (URL)", so the list now validates against the
+  published schema alone. `schemas/dvbi-5g-ext-1.0.xsd` is removed, and with it the service class
+  and unicast fallback fields: the class belongs in the User Service Description (clause 9.3.1), and
+  a unicast copy is another instance with a lower priority.
+- **The `mbms://` URL is checked on save** against 3GPP TS 26.347 V18.1.0 clause 8.2.2; an invalid
+  one is refused with a 400.
+
 ## 2026-09 (cont.) — Security hardening
 
 - **Uploaded logos cannot execute.** SVG is among the accepted image types, and uploads are served

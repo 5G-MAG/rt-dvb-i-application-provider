@@ -828,7 +828,7 @@ function renderServices() {
   el.innerHTML = config.services.map((s, i) => {
     const disabled   = s.enabled === false;
     const instBadges = (s.instances || []).map(inst =>
-      `<span class="badge badge-${esc(inst.type)}"${inst.type==='mbms' ? ' title="Local 5G/MBMS extension, not defined by DVB"' : ''}>${esc(inst.type==='mbms' ? '5G EXT' : inst.type.toUpperCase())} ·${esc(String(inst.priority))}</span>`
+      `<span class="badge badge-${esc(inst.type)}"${inst.type==='mbms' ? ' title="5G Broadcast: mbms:// locator in IdentifierBasedDeliveryParameters"' : ''}>${esc(inst.type==='mbms' ? '5G' : inst.type.toUpperCase())} ·${esc(String(inst.priority))}</span>`
     ).join(' ');
     const logoStyle = `background:${esc(s.logoBg || '#2c3e50')}${disabled ? ';opacity:0.5' : ''}`;
     const logoContent = s.logoUrl
@@ -1173,7 +1173,7 @@ function redrawInstances() {
             <option value="hls"       ${inst.type==='hls'       ?'selected':''}>HLS</option>
             <option value="dash"      ${inst.type==='dash'      ?'selected':''}>DASH</option>
             <option value="multicast" ${inst.type==='multicast' ?'selected':''}>Multicast</option>
-            <option value="mbms"      ${inst.type==='mbms'      ?'selected':''}>5G / MBMS (extension)</option>
+            <option value="mbms"      ${inst.type==='mbms'      ?'selected':''}>5G Broadcast (mbms://)</option>
           </select>
         </div>
         <div class="field" style="max-width:70px">
@@ -1188,21 +1188,12 @@ function redrawInstances() {
       </div>
       ${inst.type==='mbms' ? `
       <div class="ext-warn">
-        <strong>Local extension, not DVB-specified.</strong> No delivery parameter type in
-        ETSI TS 103 770 V1.2.1 carries MBMS, so this instance is emitted as
-        <code>OtherDeliveryParameters</code> with an <code>xsi:type</code> from the 5G-MAG namespace
-        <code>urn:5g-mag:metadata:dvbi-5g:2026</code>. Receivers that do not know it skip the
-        instance. See <code>schemas/dvbi-5g-ext-1.0.xsd</code> and COMPLIANCE.md.
-      </div>
-      <div class="inst-row">
-        <div class="field">
-          <label>MBMS service class</label>
-          <input type="text" value="${esc(inst.serviceClass||'')}" placeholder="urn:dvb:metadata:serviceClass:DVB-I_Service_Instance:1" oninput="instChange(${i},'serviceClass',this.value)" style="font-family:monospace;font-size:0.78rem"/>
-        </div>
-        <div class="field">
-          <label>Unicast fallback URL</label>
-          <input type="url" value="${esc(inst.unicastFallback||'')}" placeholder="https://… (optional)" oninput="instChange(${i},'unicastFallback',this.value)" style="font-family:monospace;font-size:0.78rem"/>
-        </div>
+        Emitted as <code>IdentifierBasedDeliveryParameters</code> (ETSI TS 103 770 V1.2.1 clause
+        5.5.18.8) holding the <code>mbms://</code> URL of the MBMS User Service, which clause 9.3.3
+        has the client pass to its MBMS Client. The URL must follow ETSI TS 126 347 clause 8.2.2, and
+        its part before any <code>&amp;</code> must equal the User Service's <code>serviceId</code> on
+        the BM-SC. The service class (clause 9.3.1) is set on the BM-SC, not here. To offer the same
+        service over unicast, add a DASH or HLS instance with a lower priority.
       </div>` : ''}
       <div class="inst-row" style="align-items:flex-end">
         <div class="field">

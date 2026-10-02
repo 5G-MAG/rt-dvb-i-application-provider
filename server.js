@@ -73,6 +73,60 @@ function cgsidProblem(cfg) {
   return null;
 }
 
+// A service instance delivered over MBMS (5G Broadcast) is signalled with
+// IdentifierBasedDeliveryParameters, whose value is the mbms:// locator TS 103 770 V1.2.1 clause
+// 9.3.3 hands to the MBMS Client. Clause 5.5.4, table 16, defines that element as "An identifier in
+// the form of a locator (URL) or name (URN) that contains the parameters of the relevant delivery
+// system for this service instance", and annex G.2.3 uses it the same way for HLS. No clause names
+// it for MBMS; it is the element of ServiceInstanceType whose definition fits.
+//
+// The locator must be an MBMS URL, TS 26.347 V18.1.0 clause 8.2.2:
+//   mbms-URI = "mbms:" "//" authority path-abempty *( "&" mid-label "=" mid-value ) [ "&label=" resourceURI ]
+// "There are no currently defined mid-part pairs; they shall not be present in URLs", except the
+// Receive-only Mode form of clause 8.2.4 on mbms://rom.3gpp.org, whose pairs are not checked here.
+// Its prefix "is the serviceId of the service", which only the BM-SC knows, so that is not checked.
+const MBMS_ROM_AUTHORITY = 'rom.3gpp.org';
+
+function mbmsLocatorProblem(url) {
+  const u = String(url || '');
+  if (!u.startsWith('mbms://')) return `"${u}" is not an MBMS URL: it must start with mbms:// (TS 26.347 clause 8.2.2).`;
+  const at = u.indexOf('&label=');
+  const head = at < 0 ? u : u.slice(0, at);
+  const label = at < 0 ? null : u.slice(at + '&label='.length);
+  const [prefix, ...mid] = head.split('&');
+  let parsed;
+  try { parsed = new URL('http' + prefix.slice('mbms'.length)); } catch (_) { parsed = null; }
+  if (!parsed || !parsed.host || parsed.search || parsed.hash) {
+    return `"${u}" is not an MBMS URL: after mbms:// it needs an authority and an optional path, ` +
+           `with no query or fragment before any &label= (TS 26.347 clause 8.2.2).`;
+  }
+  if (mid.length && parsed.host !== MBMS_ROM_AUTHORITY) {
+    return `"${u}" carries &name=value pairs, which TS 26.347 clause 8.2.2 says shall not be present ` +
+           `outside the Receive-only Mode form on mbms://${MBMS_ROM_AUTHORITY} (clause 8.2.4).`;
+  }
+  if (mid.some(p => !/^[A-Za-z][A-Za-z0-9]*=.+$/.test(p))) {
+    return `"${u}" has a mid-part that is not &name=value (TS 26.347 clause 8.2.2).`;
+  }
+  if (label !== null) {
+    try { new URL(label); } catch (_) {
+      return `"${u}": the &label= suffix must be a URI (TS 26.347 clause 8.2.2).`;
+    }
+  }
+  return null;
+}
+
+function mbmsProblem(cfg) {
+  for (const [i, s] of (cfg.services || []).entries()) {
+    for (const [j, inst] of ((s && s.instances) || []).entries()) {
+      if (inst && inst.type === 'mbms') {
+        const p = mbmsLocatorProblem(inst.url);
+        if (p) return `services[${i}].instances[${j}]: ${p}`;
+      }
+    }
+  }
+  return null;
+}
+
 function assertValidConfigShape(cfg) {
   if (!cfg || typeof cfg !== 'object' || Array.isArray(cfg)) throw new Error('config must be an object');
   if (!Array.isArray(cfg.services)) throw new Error('config.services must be an array');
@@ -134,6 +188,8 @@ let config    = loadConfig();
   // A warning, not a failure: a list already carrying a bad identifier has to stay loadable, or
   // there is no way to open the editor and correct it.
   if (problem) logger.warn('Service list will not validate against the DVB-I schema', { problem });
+  const mbms = mbmsProblem(config);
+  if (mbms) logger.warn('Service list carries an invalid MBMS locator', { problem: mbms });
 }
 // Floored to whole seconds: HTTP-date precision is 1s, so a sub-second lastSaved
 // would never satisfy If-Modified-Since and 304s would never fire right after a save.
@@ -298,13 +354,6 @@ const DRM_UUID = {
 // Linked application HowRelated. TS 103 770 V1.2.1 clause 5.2.3.1 requires the RelatedMaterial
 // to carry a HowRelated whose @href comes from urn:dvb:metadata:cs:LinkedApplicationCS:2019.
 // 1.1 = broadcast-related app (media in parallel); use 1.2 for an app controlling media presentation.
-// A LOCAL EXTENSION, not part of any specification. TS 103 770 defines no delivery parameters type
-// for MBMS (clauses 5.5.18.1 to 5.5.18.8) while its clause 9.3.3 describes a service instance with
-// an mbms:// locator, which TR 103 972 clause 6.2.4 records as an open gap. This namespace is a
-// 5G-MAG one rather than a dvb.org one precisely so that a list carrying it says so.
-const NS_DVBI_5G = 'urn:5g-mag:metadata:dvbi-5g:2026';
-const DVBI_5G_EXTENSION_NAME = 'urn:5g-mag:dvbi-5g:mbms';
-
 const LINKED_APP_HREF = 'urn:dvb:metadata:cs:LinkedApplicationCS:2019:1.1';
 
 // Genre short name → display label
@@ -497,20 +546,13 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
     </ServiceInstance>`;
       }
 
-      // 5G Broadcast or 5MBS delivery, through the extension point rather than as a DASH instance:
-      // TR 103 972 clause 6.4.3.3 discourages presenting it as DASH, because existing clients may
-      // assume DASH means unicast. A client that does not know this extension ignores the instance
-      // and uses another, which is the behaviour that makes a hybrid service degrade gracefully.
+      // 5G Broadcast delivery: the mbms:// locator of the MBMS User Service (see mbmsLocatorProblem).
+      // @contentType is optional and left out: table 33a lets the payload type be "determined through
+      // some component of the element value", here the mbms scheme.
+      // A unicast copy of the same service is simply another instance with a lower @priority.
       if (inst.type === 'mbms') {
-        const cls = inst.serviceClass || 'urn:dvb:metadata:serviceClass:DVB-I_Service_Instance:1';
-        const fallback = inst.unicastFallback
-          ? `\n          <dvbi5g:UnicastFallback>${xe(inst.unicastFallback)}</dvbi5g:UnicastFallback>` : '';
         return `${head}
-      <!-- Local extension, not DVB-specified: see schemas/dvbi-5g-ext-1.0.xsd and COMPLIANCE.md -->
-      <OtherDeliveryParameters extensionName="${DVBI_5G_EXTENSION_NAME}" xsi:type="dvbi5g:MBMSDeliveryParametersType">
-        <dvbi5g:ServiceLocator>${xe(inst.url)}</dvbi5g:ServiceLocator>
-        <dvbi5g:ServiceClass>${xe(cls)}</dvbi5g:ServiceClass>${fallback}
-      </OtherDeliveryParameters>
+      <IdentifierBasedDeliveryParameters>${xe(inst.url)}</IdentifierBasedDeliveryParameters>
     </ServiceInstance>`;
       }
 
@@ -609,13 +651,6 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
   </Service>`;
   }).join('');
 
-  // The extension namespace is declared only when a service actually carries an MBMS instance.
-  // Declaring it unconditionally makes every list look like it uses a local extension, which is
-  // untrue of most of them and defeats conformance checking, since a checker cannot tell a list
-  // that merely declares the namespace from one that uses it.
-  const uses5g = enabled.some(s => (s.instances || []).some(i => i.type === 'mbms'));
-  const ext5gNs = uses5g ? `\n  xmlns:dvbi5g="${NS_DVBI_5G}"` : '';
-
   // Per-service ContentGuideSources for services with a custom EPG URL
   const perSvcCGS = enabled
     .filter(s => s.customEpgUrl)
@@ -633,7 +668,7 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
   xmlns:hls="vnd:apple:mpegurl"
   xmlns:tva="urn:tva:metadata:2024"
-  xmlns:dvbisd-t="urn:dvb:metadata:servicediscovery-types:2023"${ext5gNs}
+  xmlns:dvbisd-t="urn:dvb:metadata:servicediscovery-types:2023"
   id="${xe(listId)}"
   version="${xe(version)}" xml:lang="${xe(cfg.listLang || 'en')}">
 
@@ -976,6 +1011,8 @@ app.put('/api/config', requireAdmin, rateLimit('mutate', 30, 60000), (req, res) 
     if (!Array.isArray(updated.services)) return res.status(400).json({ error: 'Config must have a services array' });
     const cgsid = cgsidProblem(updated);
     if (cgsid) return res.status(400).json({ error: cgsid });
+    const mbms = mbmsProblem(updated);
+    if (mbms) return res.status(400).json({ error: mbms });
     updated.version = (config.version || 0) + 1;
     saveHistory(config); // snapshot previous state
     config = updated;
@@ -1128,4 +1165,4 @@ function startServer() {
 // Only listen when run directly; when required (e.g. by the XSD test) just export the builders.
 if (require.main === module) startServer();
 
-module.exports = { app, startServer, buildServiceList, buildSchedule, msDur, cgsidProblem };
+module.exports = { app, startServer, buildServiceList, buildSchedule, msDur, cgsidProblem, mbmsLocatorProblem };

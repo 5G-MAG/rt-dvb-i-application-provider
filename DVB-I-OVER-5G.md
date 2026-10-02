@@ -15,30 +15,32 @@ that owns it, not against every document the report cites:
 |---|---|
 | Closed | 7 |
 | Addressed by restructuring, though not as proposed | 1 |
+| Met by an existing element, on our reading | 1 |
 | Not a gap; the report itself says so | 1 |
-| Open | 5 |
+| Open | 4 |
 
 One of those was closed a *month before the report was published*. Five more have closed since,
 three of them in a 3GPP document that did not exist in its current form when the report was written.
 
-**The five that remain split into two groups.** Three are the same DVB-side problem: a DVB-I service
-list has nowhere to put a 5G locator, whether for 5G Broadcast or for 5GMS access information. Two
-are xMB provisioning details that would matter to an operator but block nothing.
+**The four that remain split into two groups.** Two are the same DVB-side problem: a DVB-I service
+list has nowhere to put 5GMS access information. Two are xMB provisioning details that would matter
+to an operator but block nothing. The 5G Broadcast locator, which the report also lists as a gap,
+fits an element TS 103 770 V1.2.1 already has, `IdentifierBasedDeliveryParameters`; that is our
+reading, since no clause names the element for MBMS.
 
 **The asymmetry is the real story.** The 3GPP-derived documents have moved through two or three
 releases since the versions the report assessed, and that is where six of the seven closures happened.
 The DVB side has moved once: TS 103 770 was reissued in 2024-09, which closed one gap, and it did not
-add any way to signal 5G delivery. What is holding this up is a service list extension: small, well
-understood, and squarely in DVB's court.
+add any element for 5GMS access information. That part is squarely in DVB's court.
 
 **What is already specified is more than most people expect.** TS 103 770 clause 9.3 covers carriage
 of DVB-I in an MBMS system normatively, including the service class identifiers, and it puts the
 DVB-I client in the role of an MBMS-Aware Application invoking an MBMS Client. That is the same
 split the 5G-MAG reference implementations already have.
 
-**What could be built here today**: choosing and documenting a local delivery-signalling extension,
-emitting it from this server, and publishing the service list itself over MBMS, for which the
-service class is already defined. Teaching a receiver to drive an MBS client is the substantial
+**What could be built here today**: emitting a 5G Broadcast instance as
+`IdentifierBasedDeliveryParameters` holding its `mbms://` URL (done), and publishing the service list
+itself over MBMS, for which the service class is already defined. Teaching a receiver to drive an MBS client is the substantial
 piece. The 5G Media Streaming path is blocked on work that is not ours.
 
 Full reasoning, evidence and clause references follow.
@@ -91,17 +93,21 @@ procedure below is the MBMS one, and `rt-mbms-*` is the stack it lands on.
 
 ## What is still missing
 
-**There is no delivery parameters type for MBMS or 5G Broadcast.** A service instance chooses among
-`DVBTDeliveryParameters`, `DVBSDeliveryParameters`, `DVBCDeliveryParameters`,
+**No delivery parameters type is named for MBMS or 5G Broadcast, but one fits.** A service instance
+chooses among `DVBTDeliveryParameters`, `DVBSDeliveryParameters`, `DVBCDeliveryParameters`,
 `RTSPDeliveryParameters`, `MulticastTSDeliveryParameters`, `DASHDeliveryParameters`,
 `SATIPDeliveryParameters`, `IdentifierBasedDeliveryParameters` (clauses 5.5.18.1 to 5.5.18.8) or the
-`OtherDeliveryParameters` extension point. None of them is MBMS.
+`OtherDeliveryParameters` extension point. Clause 9.3.3 speaks of "a DVB-I service instance with an
+mbms:// locator", the only occurrence of `mbms://` in the document, without naming the element.
 
-Clause 9.3.3 nonetheless speaks of "a DVB-I service instance with an mbms:// locator", and that
-phrase is the only occurrence of `mbms://` in the document: the behaviour is specified while the
-element that would carry the locator is not. TR 103 972 clause 6.2.4 says an extension is needed so
-that a service instance can refer to a 5G Broadcast or MBMS URL with delivery parameters of its own,
-and notes it could be defined either in TS 103 770 or in an MBMS or 5G Broadcast specification.
+TS 103 770 V1.2.1 clause 5.5.4, table 16, defines `IdentifierBasedDeliveryParameters` as "An
+identifier in the form of a locator (URL) or name (URN) that contains the parameters of the relevant
+delivery system for this service instance." An `mbms://` URL is such a locator, and annex G.2.3 uses
+the element the same way for an HLS playlist. This server therefore emits a 5G Broadcast instance as
+`IdentifierBasedDeliveryParameters` holding the `mbms://` URL, with no extension. That is a reading:
+no clause says "use this element for MBMS". TR 103 972 clause 6.2.4 asks for an extension "such that
+a service instance can refer to a 5G Broadcast/MBMS URL and include a new set of service delivery
+parameters specifically for 5G Broadcast"; the URL is covered, a new set of parameters is not.
 
 Checked directly, and by fragments rather than whole strings so that a phrase broken across a line
 or a table column could not hide: neither TS 103 770 V1.2.1 nor the A177r8 draft of V1.3.1 contains
@@ -149,7 +155,7 @@ the report assessed 5G Media Streaming against Release 16 and the current issue 
 | 2 | A 5G Broadcast Receiver is not required to support simultaneous reception of more than one user service | TS 103 720 | **closed**, before the report |
 | 3 | Possible gap in the stage 3 xMB-C API for notifying the BM-SC of updates | TS 129 116 | **open** |
 | 4 | A service class filter for DVB-I services needs defining by DVB | DVB | **closed** |
-| 5 | A service instance cannot refer to a 5G Broadcast or MBMS URL | DVB or 3GPP | **open** |
+| 5 | A service instance cannot refer to a 5G Broadcast or MBMS URL | DVB or 3GPP | **met by an existing element**, on our reading |
 
 **Gap 2 was already closed when the report was published.** TS 103 720 V1.2.1 clause 7.4 says a 5G
 Broadcast Receiver should support simultaneous reception of at least four MBMS User Services on the
@@ -178,12 +184,13 @@ identifiers, `urn:dvb:metadata:serviceClass:DVB-I_Service_List:1`, `...DVB-I_Con
 carry the appropriate one. That is exactly the filter the report asked for, and it arrived in the
 issue published a year after the report.
 
-**Gap 5 is open, and stays open in the draft.** The delivery parameter choice offers eight types
-(clauses 5.5.18.1 to 5.5.18.8) plus the `OtherDeliveryParameters` extension point, none of them
-MBMS. Clause 9.3.3 nonetheless describes what a client does with "a service instance with an
-mbms:// locator", the only occurrence of that scheme in the document. Neither V1.2.1 nor A177r8
-mentions 5G Media Streaming in any spelling, nor cites the 5G Broadcast or 5G Media Streaming
-specifications at all.
+**Gap 5 is met by an existing element, on our reading.** `IdentifierBasedDeliveryParameters`
+(clause 5.5.18.8; table 16 defines it as "An identifier in the form of a locator (URL) or name (URN)
+that contains the parameters of the relevant delivery system for this service instance.") can hold
+the `mbms://` URL that clause 9.3.3 acts on. No clause names it for MBMS, and A177r8 adds nothing
+here. The "new set of service delivery parameters" the report also asks for has no home, but no
+DVB-I or 3GPP clause says what such a set would contain. Neither V1.2.1 nor A177r8 mentions 5G
+Media Streaming in any spelling, nor cites the 5G Broadcast or 5G Media Streaming specifications.
 
 ### 5G Media Streaming scenario, TR clause 6.3.4
 
@@ -231,15 +238,15 @@ call rather than a matching of text, and it should be confirmed with 3GPP before
 
 ### What this leaves
 
-Of fourteen items, seven are closed, one is addressed by restructuring, one the report itself says
-needs no specification work, and five are open.
+Of fourteen items, seven are closed, one is addressed by restructuring, one is met by an existing
+element on our reading (clause 6.2.4 gap 5, above), one the report itself says needs no
+specification work, and four are open.
 
-The five open ones fall into two groups.
+The four open ones fall into two groups.
 
-**Three are on the DVB side, and are the same shape**: the service list has nowhere to put a 5G
-locator, whether for 5G Broadcast (clause 6.2.4 gap 5) or for 5GMS access information (clause 6.3.4
-gaps 1 and 2). This is the group that blocks anything being built here, and it is small,
-well understood, and squarely in DVB's court.
+**Two are on the DVB side, and are the same shape**: the service list has nowhere to put 5GMS access
+information (clause 6.3.4 gaps 1 and 2). This is the group that blocks the 5GMS path here, and it is
+squarely in DVB's court.
 
 **Two are xMB provisioning details** (clause 6.2.4 gaps 1 and 3): how the two update-interval
 properties should be configured, and the absence of a way for a Content Provider to notify the BM-SC
@@ -275,7 +282,7 @@ it. Anyone re-checking this work should use the same method rather than a plain 
 
 | Piece | Where | Relevance |
 |---|---|---|
-| Service list generation with an extension point | `rt-dvb-i-application-provider` | `OtherDeliveryParameters` with an `xsi:type` is already how HLS is signalled here, following TS 103 770 annex G.2.2. The same mechanism is what a 5G Broadcast instance would use. |
+| Service list generation | `rt-dvb-i-application-provider` | Emits a 5G Broadcast instance as `IdentifierBasedDeliveryParameters` holding the `mbms://` URL, the element annex G.2.3 also uses for HLS. |
 | A receiver that already handles unplayable instance types | `rt-dvb-i-application` | It parses DVB-T/S/C instances and lists those services with a badge rather than dropping them, which is the behaviour an unsupported 5G instance needs. |
 | An MBMS Client and an MBMS-aware application | `rt-mbms-client`, `rt-mbms-application` | The two roles clause 9.3.3 describes, with a local API between them. `rt-mbs-*` is 5G MBS User Services (3GPP TS 26.502), a different system that clause 9.3 does not mention. |
 | A BM-SC with an xMB-C interface | `rt-mbms-bmsc` | The provisioning side: where a service class is set on a service resource. |
@@ -383,39 +390,37 @@ referenced by the User Service Description, an MPD in the DASH case, to be passe
 player instead. In practice an MBMS Client reconstructs the received objects and republishes them
 over local HTTP, so what the player sees is an ordinary MPD URL.
 
-### The one piece with no clause
+### The locator, and where it goes
 
-Step 4 begins "a DVB-I service instance with an mbms:// locator", and nothing in TS 103 770 says
-which element carries that locator. That is gap 5 above, and it is the only thing in this whole
-procedure that a deployment has to invent. This repository invents it as
-`schemas/dvbi-5g-ext-1.0.xsd`, in a 5G-MAG namespace and marked as an extension everywhere it
-appears; see COMPLIANCE.md. It carries the locator, the service class from table 106 so a receiver
-can check rather than assume, and a unicast fallback URL.
-
-Choosing the class in the service list matters: it is what lets a receiver match an instance against
-the announced user services without opening each one.
+Step 4 begins "a DVB-I service instance with an mbms:// locator", and TS 103 770 does not name the
+element that carries it. This repository puts it in `IdentifierBasedDeliveryParameters`, whose
+definition fits (gap 5 above). The URL must follow TS 26.347 V18.1.0 clause 8.2.2, which the editor
+checks on save, and its prefix "is the serviceId of the service on which the resource is
+available", which only the BM-SC can confirm. The service class belongs in the User Service
+Description (clause 9.3.1), not in the service list, and a unicast copy of the same service is
+another instance with a lower `@priority`.
 
 ### What each component would have to do
 
 | Component | What it does here |
 |---|---|
-| `rt-dvb-i-application-provider` | Emits the service list, including the extension. Already done. |
+| `rt-dvb-i-application-provider` | Emits the service list, including the 5G Broadcast instance. Already done. |
 | `rt-mbms-bmsc` | Accepts a service over xMB-C with `service-class` set to the table 106 value, and puts it in the User Service Description. |
 | `rt-mbms-gw`, `rt-mbms-tx` | Carry the service list document, the content guide documents and the media segments as file objects. |
 | `rt-mbms-client` | Holds the announcement channel, reconstructs objects, and must expose the service class of each user service, which clause 9.3.2 requires and which it does not do today: `GET /client-api/service_announcement` returns the parsed announcement items with no class on them. |
-| `rt-dvb-i-application` | Acts as the MBMS-aware application: ask the client for user services of class `DVB-I_Service_List:1`, load the list from the reconstructed copy, and on selecting an extension instance ask the client to start reception and then play the MPD it republishes. |
+| `rt-dvb-i-application` | Acts as the MBMS-aware application: ask the client for user services of class `DVB-I_Service_List:1`, load the list from the reconstructed copy, and on selecting an instance with an `mbms://` locator ask the client to start reception and then play the MPD it republishes. |
 
 The smallest useful step is not step 4. It is publishing the service list itself as a user service of
 class `DVB-I_Service_List:1` and having the receiver load it from the MBMS Client's local HTTP copy:
 that exercises provisioning, the class label, the announcement channel and object delivery, and it
-needs no extension at all, because a service list carried this way still describes ordinary unicast
-instances.
+needs no 5G instance at all, because a service list carried this way still describes ordinary
+unicast instances.
 
 ### What this section does not establish
 
-- ETSI TS 126 347 is not held here. Clause 9.3.2's reference to its clause 6.2, and anything about
-  how the `mbms://` scheme is formed or how an MBMS-aware application calls an MBMS Client, are
-  `unverified: could not obtain ETSI TS 126 347`.
+- How the `mbms://` scheme is formed is checked against 3GPP TS 26.347 V18.1.0 clause 8.2.2 (the
+  ETSI TS 126 347 text). Clause 9.3.2's reference to its clause 6.2, and how an MBMS-aware
+  application calls an MBMS Client, were not reassessed here.
 - The service class syntax comes from OMA BCAST Service Guide V1.1 clause E.1.2, which is not held
   here either. The three values DVB defines are given verbatim in table 106, so nothing above
   depends on that syntax.
@@ -427,15 +432,12 @@ instances.
 
 In the order that yields something demonstrable soonest.
 
-1. **Decide and document the delivery signalling.** Since no standard element exists, a
-   demonstration has to choose one, and must be explicit that it is a local extension rather than a
-   specified one. `OtherDeliveryParameters` with a private `xsi:type` carrying the MBMS service
-   locator is the option TR 103 972 clause 6.4.3.3 effectively points at, and the option it warns
-   against is dressing it up as ordinary DASH delivery. Whatever is chosen should be recorded in the
-   conformance record as an extension, so it is never mistaken for conformance.
+1. **Signal the 5G Broadcast instance.** Done: `IdentifierBasedDeliveryParameters` holding the
+   `mbms://` URL, with no extension. TR 103 972 clause 6.4.3.3 warns against dressing it up as
+   ordinary DASH delivery, and this does not.
 
-2. **Emit it from the provider.** A new instance type alongside the existing DASH one, so a service
-   is offered on both unicast and 5G, which is the hybrid case of TR 103 972 clause 6.4.
+2. **Emit it from the provider.** Done: a 5G Broadcast instance type alongside the DASH one, so a
+   service is offered on both unicast and 5G, which is the hybrid case of TR 103 972 clause 6.4.
 
 3. **Publish the service list itself over MBMS.** Clause 9.3.1 already defines the service class for
    this, so the provisioning side is specified: a user service of class `DVB-I_Service_List:1`

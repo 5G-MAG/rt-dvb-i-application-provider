@@ -116,38 +116,36 @@ redistributed here — see CHANGELOG.md for context.
 
 What it would take to carry these services over a 5G system, which of ETSI TR 103 972's fourteen
 gaps are still open, and what is already specified: see `DVB-I-OVER-5G.md` beside this file. In
-short, seven of the fourteen are closed and the ones that block work here are all the same missing
-service list extension.
+short, seven of the fourteen are closed, the 5G Broadcast locator fits an existing element, and the
+ones that block work here are the missing elements for 5GMS access information.
 
-### The local 5G delivery extension is an extension, not conformance
+### 5G Broadcast instances use IdentifierBasedDeliveryParameters
 
-`schemas/dvbi-5g-ext-1.0.xsd` defines two types in the 5G-MAG namespace
-`urn:5g-mag:metadata:dvbi-5g:2026`: `MBMSDeliveryParametersType`, for a service instance delivered
-over MBMS, and `MBMSOfferingType`, for a Service List Registry offering that says the same about a
-whole list. **Neither is defined by DVB, and nothing here claims otherwise.** They exist because
-TS 103 770 V1.2.1 specifies eight delivery parameter types (clauses 5.5.18.1 to 5.5.18.8), none of
-them MBMS, while its clause 9.3.3 already describes what a client does with an MBMS locator.
+A service instance delivered over MBMS (5G Broadcast) is emitted as
+`<IdentifierBasedDeliveryParameters>mbms://…</IdentifierBasedDeliveryParameters>`, with no
+extension and no namespace of our own, so the list validates against the published schema alone.
 
-They use the extension point the specification provides, `OtherDeliveryParameters` typed
-`dvbi-types:ExtensionBaseType`, which is the same mechanism annex G.2.2 uses for HLS. A receiver
-that does not know the namespace finds no delivery parameters it understands on that instance and
-moves on, which is the intended behaviour.
+ETSI TS 103 770 V1.2.1 clause 9.3.3: "When a DVB-I service instance with an mbms:// locator is
+selected by the user, the DVB-I client (acting as an MBMS-Aware Application) shall invoke the MBMS
+Client to initiate reception of the corresponding MBMS User Service."
+It does not name the element. Clause 5.5.4, table 16, row `IdentifierBasedDeliveryParameters`: "An
+identifier in the form of a locator (URL) or name (URN) that contains the parameters of the relevant
+delivery system for this service instance."
+Annex G.2.3 uses the element the same way for HLS. **That is our reading, not a sentence of the
+specification**: no clause says to use this element for MBMS.
 
-Where it is made visible, so that nobody mistakes it for specified behaviour:
+- `@contentType` is left out. Table 33a allows that when the payload type can be "determined through
+  some component of the element value", here the `mbms` scheme.
+- The URL is checked on save against 3GPP TS 26.347 V18.1.0 clause 8.2.2 (scheme, authority, no
+  mid-part pairs except the Receive-only Mode form of clause 8.2.4, `&label=` suffix a URI). Its
+  prefix must equal the User Service's `serviceId`, which only the BM-SC knows and is not checked.
+- The service class of table 106 is set in the User Service Description (clause 9.3.1), on the
+  BM-SC, not in the service list.
+- A unicast copy of the same service is another instance with a lower `@priority`.
 
-| Where | How |
-|---|---|
-| Service list | an inline XML comment on the element, and the namespace declared only in documents that use it |
-| Receiver | a dashed "5G ext" badge naming the extension, and a playback message saying the delivery rests on a local extension |
-| Registry response | the same inline comment, the namespace declared only when used |
-| Registry dashboard | its own Extensions column, outlined rather than filled, never merged into Delivery |
-| Conformance checks | any document carrying the namespace is reported NOT CHECKED unless `DVBI_5G_EXT_SCHEMA` supplies the extension schema, so it can never be counted as conformance to the published one |
-
-It is not a `Delivery` value for registry queries: TS 103 770 V1.2.1 clause 5.3.6.1, table 12b is a
-closed set, and an unlisted value has to be refused with a 400.
-
-When DVB specifies a delivery type for MBMS, that becomes the conformant signalling and this is
-withdrawn.
+An earlier version carried the locator in a 5G-MAG extension (`urn:5g-mag:metadata:dvbi-5g:2026`,
+`OtherDeliveryParameters` with a private `xsi:type`). It was withdrawn because the existing element
+covers the locator.
 
 ## Classification-scheme terms
 

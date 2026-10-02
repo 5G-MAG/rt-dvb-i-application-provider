@@ -78,22 +78,15 @@ leaves the admin API and the logo upload open to anyone who can reach the port.
 supported field populated, and the channel line-up of the live demo. Files are read on each request,
 so adding one changes what the editor offers without a restart.
 
-## The local 5G broadcast extension
+## 5G Broadcast instances
 
-A service instance can be given the type **5G / MBMS** in the editor. **Nothing in DVB defines
-this.** ETSI TS 103 770 V1.2.1 specifies eight delivery parameter types (clauses 5.5.18.1 to
-5.5.18.8) and none of them is MBMS, so the instance is emitted through the extension point the
-specification does provide, `OtherDeliveryParameters`, with an `xsi:type` from the 5G-MAG namespace
-`urn:5g-mag:metadata:dvbi-5g:2026`. The schema is `schemas/dvbi-5g-ext-1.0.xsd`.
-
-It is labelled as an extension everywhere it can be seen: the editor warns on the instance and
-badges it "5G EXT", the generated XML carries an inline comment and declares the namespace only when
-something uses it, the receiver shows a dashed "5G ext" badge, and the conformance check reports
-such a document as *not conformant ground* rather than as a pass. See
-[COMPLIANCE.md](COMPLIANCE.md) for the full record and [DVB-I-OVER-5G.md](DVB-I-OVER-5G.md) for why
-the gap exists.
-
-The demo service list does not use it: it is unicast DASH only.
+A service instance can be given the type **5G Broadcast** in the editor. It is emitted as
+`IdentifierBasedDeliveryParameters` holding the `mbms://` URL of the MBMS User Service, which
+ETSI TS 103 770 V1.2.1 clause 9.3.3 has the client hand to its MBMS Client. Table 16 defines that
+element as an identifier "in the form of a locator (URL)" for "the relevant delivery system"; no
+clause names it for MBMS, so this is a reading, recorded in COMPLIANCE.md. The URL is checked on
+save against ETSI TS 126 347 clause 8.2.2. To offer the same service over unicast, add a DASH or
+HLS instance with a lower priority.
 
 ## Development
 
@@ -110,7 +103,6 @@ attachment archive accompanying TS 103 770.
 ## Documentation
 
 - [COMPLIANCE.md](COMPLIANCE.md): what is conformant, against which issue, and what is not
-- [schemas/dvbi-5g-ext-1.0.xsd](schemas/dvbi-5g-ext-1.0.xsd): the local 5G delivery extension
 - [DVB-I-OVER-5G.md](DVB-I-OVER-5G.md): what carrying these services over a 5G system would require
 - [DEPLOYMENT.md](DEPLOYMENT.md): running it somewhere other than your laptop
 - [CHANGELOG.md](CHANGELOG.md)
