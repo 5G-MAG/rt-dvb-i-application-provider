@@ -282,10 +282,11 @@ const AIT_CONTEXT_PARAMS = ['regionID[]', 'lloc'];
 // mhp:mhpVersion element. This shall be as defined in clause 7.2.3.1, table 5 of ETSI TS 102 796 [21]."
 // Reference [21] is undated, so its latest issue applies: ETSI TS 102 796 V1.8.1 (2026-09). Table 5,
 // row "5.2.5 Platform profiles": the basic profile is 0x0000, and 0x0001 (A/V content download)
-// and 0x0002 (PVR) "can be combined"; terminals "shall launch applications signalled with the
-// following values for major, minor and micro", the versions listed here.
+// and 0x0002 (PVR) "can be combined"; "The version fields shall be set as follows:" major 1,
+// minor 8, micro 1. The other values that row lists are those a terminal still launches, not
+// values to write.
 const AIT_PROFILES = [0x0000, 0x0001, 0x0002, 0x0003];
-const AIT_PLATFORM_VERSIONS = ['1.1.1', '1.2.1', '1.3.1', '1.4.1', '1.5.1', '1.6.1', '1.7.1', '1.8.1'];
+const AIT_PLATFORM_VERSION = '1.8.1';
 // ETSI TS 102 809 V1.3.1 clause 5.2.3.1: organisation_id "Values of zero shall not be encoded" and
 // "the most significant 8 bits of the organisation_id shall be zero"; table 1 gives application_id
 // 0x0001 to 0x9fff to unsigned, signed and privileged applications, reserves 0xa000 to 0xfffd, and
@@ -341,9 +342,9 @@ function catchupPlayerProblem(p) {
     return 'profile must be 0 (basic), 1, 2 or 3: the profiles ETSI TS 102 796 clause 7.2.3.1, table 5 defines (TS 103 770 clause 5.2.4.2).';
   }
   const ver = ['versionMajor', 'versionMinor', 'versionMicro'].map(k => parseInt(p[k], 16)).join('.');
-  if (!AIT_PLATFORM_VERSIONS.includes(ver)) {
-    return `platform version ${ver} is not one ETSI TS 102 796 clause 7.2.3.1, table 5 lists (${AIT_PLATFORM_VERSIONS.join(', ')}); ` +
-           'the client "shall ignore applications listed with other values" (TS 103 770 clause 5.2.4.2).';
+  if (ver !== AIT_PLATFORM_VERSION) {
+    return `platform version ${ver} is not ${AIT_PLATFORM_VERSION}: "The version fields shall be set as follows" ` +
+           `(major 1, minor 8, micro 1) (ETSI TS 102 796 V1.8.1 clause 7.2.3.1, table 5, row 5.2.5; TS 103 770 clause 5.2.4.2).`;
   }
   let base;
   try { base = new URL(p.urlBase); } catch (_) { base = null; }

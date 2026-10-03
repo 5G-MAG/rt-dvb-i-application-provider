@@ -676,7 +676,7 @@ function catchupPlayer(overrides = {}) {
   return {
     domainName: 'player.example.com', appName: 'Example Player', appNameLang: 'eng', orgId: 123, appId: 1,
     type: 'application/vnd.hbbtv.xhtml+xml', controlCode: 'AUTOSTART', visibility: 'VISIBLE_ALL',
-    serviceBound: false, priority: '1', version: '01', profile: '0', versionMajor: '1', versionMinor: '3',
+    serviceBound: false, priority: '1', version: '01', profile: '0', versionMajor: '1', versionMinor: '8',
     versionMicro: '1', urlBase: 'https://player.example.com/', location: 'catchup/index.html?ui=tv',
     contentParameter: 'media', ...overrides,
   };
@@ -948,7 +948,7 @@ test('XML AIT endpoint: application/vnd.dvb.ait+xml, deep-linked to the programm
     assert.equal(val('./m:applicationDescriptor/m:priority'), '1');
     assert.equal(val('./m:applicationDescriptor/m:version'), '01');
     assert.deepEqual(['profile', 'versionMajor', 'versionMinor', 'versionMicro']
-      .map(k => val(`./m:applicationDescriptor/m:mhpVersion/m:${k}`)), ['0', '1', '3', '1']);
+      .map(k => val(`./m:applicationDescriptor/m:mhpVersion/m:${k}`)), ['0', '1', '8', '1']);
     assert.equal(app.get('./m:applicationTransport/@xsi:type', MHP).value(), 'mhp:HTTPTransportType');
     const urlBase = val('./m:applicationTransport/m:URLBase');
     const loc = val('./m:applicationLocation');
@@ -1013,7 +1013,8 @@ test('catch-up player: values the clauses or the XML AIT schema do not allow are
     [{ version: '1' }, /version must be two/, 'ipi:Version'],
     [{ profile: '' }, /profile/, 'platform profile required'],
     [{ profile: '4' }, /profile must be/, 'not a table 5 profile'],
-    [{ versionMinor: '9' }, /1\.9\.1 is not/, 'not a table 5 version'],
+    [{ versionMinor: '9' }, /1\.9\.1 is not/, 'newer than table 5 sets'],
+    [{ versionMinor: '3' }, /1\.3\.1 is not 1\.8\.1/, 'a version terminals launch, but not the one table 5 sets'],
     [{ urlBase: 'player/' }, /absolute/, 'relative URLBase'],
     [{ urlBase: 'https://player.example.com/app' }, /slash/, 'HbbTV: URLBase ends with /'],
     [{ location: 'a b' }, /location/, 'not a URL'],
