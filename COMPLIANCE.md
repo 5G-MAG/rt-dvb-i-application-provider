@@ -190,10 +190,29 @@ where wrong:
 - **Region `@countryCodes` is checked for format only.** It is the list's configured target country
   (`[A-Z]{3}`, comma-separated), required on publish when services have target regions; whether a
   code is assigned in ISO 3166 is not checked.
-- **TLS profile not checked.** With a key and certificate the server serves TLS 1.2 and 1.3 (ETSI
-  TS 103 770 V1.2.1 clause 7.3); the cipher suites, signature algorithms, key sizes and curves
-  clause 7.3 takes from ETSI TS 102 796 clause 11.2 are not configured, since that document is not
-  held.
+- **TLS profile: what is and is not checked.** ETSI TS 103 770 V1.2.1 clause 7.3 takes the cipher
+  suites, signature algorithms, key sizes and curves from ETSI TS 102 796 V1.8.1 clause 11.2. The
+  HTTPS server sets each explicitly (see DEPLOYMENT.md) and `npm run test:unit` checks them with the
+  openssl client: 14 handshakes accepted, 13 refused. Readings taken:
+  - **TLS 1.2 suites are the five table 15a names, and no other.** The table forbids only some
+    categories; offering only what it names meets both the "only these" and the "none forbidden"
+    reading. All five offer at least 112 bits with a key of 2 048 bits or more (NIST SP 800-57 Part 1
+    Rev 5 clause 5.6.1.1, table 2: RSA k = 2048 is 112, AES-128 is 128; clause 5.6.1.2, table 3:
+    HMAC with SHA-1 is 128).
+  - **TLS 1.3 suites are the three RFC 8446 clause 9.1 names.** TS 102 796 clause 11.2.2 refers to
+    "the mandatory to implement cipher suites for TLS 1.3 as specified in IETF RFC 8446 [73], clause
+    9.1"; clause 9.1 makes one MUST and two SHOULD, and all three are offered. The 112-bit row of
+    table 15a is for TLS 1.2; ChaCha20 is not in NIST table 2, so its strength is not judged here.
+  - **Curves are table 15c only, so X25519 is not offered.** RFC 8446 clause 9.1 asks for X25519
+    "In the absence of an application profile standard specifying otherwise", and clause 7.3 names
+    the curves "as defined in clause 11.2". A client that offers only X25519 is refused.
+  - **TLS_RSA_WITH_AES_128_CBC_SHA is offered, last.** Table 15a marks it mandatory for terminals and
+    its NOTE 2 says "It is the server's responsibility to select an appropriate cipher suite from
+    those offered."; with the server's order an ECDHE suite is chosen whenever the client offers one.
+  Not checked: whether the certificate chains to a root on the HbbTV list (clause 11.2.3), which is
+  the operator's choice of CA; the hash inside an RSASSA-PSS certificate signature (accepted as
+  RSASSA-PSS); and clause 11.2.6 (TLS 1.0 and 1.1 for HbbTV 1.5 terminals), which clause 7.3 rules
+  out by naming TLS 1.2 and 1.3.
 - **Plain HTTP by default.** Without a key and certificate the server serves plain HTTP and logs a
   warning quoting the clause 7.3 same-private-subnet exception; it does not verify that clients are
   on the same private subnet, so a deployment reachable from other networks does not meet clause 7.3

@@ -1785,8 +1785,6 @@ app.get('/api/health', (req, res) =>
 // PLAIN_HTTP=behind-tls-proxy also serves plain HTTP, for a reverse proxy that terminates TLS, and
 // writes the endpoint URLs in the list as https://, the scheme clients reach the proxy with.
 // PLAIN_HTTP=private-subnet is accepted and means the same as leaving PLAIN_HTTP unset.
-// The TLS versions are Node's defaults, which offer TLS 1.2 and 1.3 (clause 7.3: servers "shall
-// support TLS version 1.2" and "should support TLS version 1.3").
 const PRIVATE_SUBNET_EXCEPTION = 'For the specific case that a DVB-I client connects to a DVB-I metadata ' +
   'endpoint located on the same private subnet (see clause 3 of IETF RFC 1918 [27]), HTTP may be used without TLS.';
 const PLAIN_HTTP_MODES = { 'private-subnet': 'http', 'behind-tls-proxy': 'https' };
@@ -1795,6 +1793,100 @@ let publicScheme = null;
 // The scheme and host clients reach this server at, for the endpoint URLs written into the list.
 function publicBase(req) {
   return `${publicScheme || req.protocol}://${req.get('host')}`;
+}
+
+// ── TLS profile ──────────────────────────────────────────────────────────────
+// Clause 7.3 continues: "using root certificates, cipher suites, signature algorithms, key sizes and
+// elliptic curves as defined in clause 11.2 of ETSI TS 102 796 [21], as applicable for the TLS
+// version used." and "DVB-I metadata endpoint servers shall support TLS version 1.2 defined in IETF
+// RFC 5246 [26] and should support TLS version 1.3 defined in IETF RFC 8446 [25] or later."
+// Reference [21] is undated, so ETSI TS 102 796 V1.8.1 (2026-09), the latest issue, applies. Each
+// option below is set explicitly, so the profile does not move with the Node or OpenSSL defaults.
+const TLS_PROFILE = {
+  minVersion: 'TLSv1.2',
+  maxVersion: 'TLSv1.3',
+  // TLS 1.3, TS 102 796 clause 11.2.2: "Terminals shall support all of the mandatory to implement
+  // cipher suites for TLS 1.3 as specified in IETF RFC 8446 [73], clause 9.1." RFC 8446 clause 9.1:
+  // "A TLS-compliant application MUST implement the TLS_AES_128_GCM_SHA256 [GCM] cipher suite and
+  // SHOULD implement the TLS_AES_256_GCM_SHA384 [GCM] and TLS_CHACHA20_POLY1305_SHA256 [RFC8439]
+  // cipher suites". Those three, and no other TLS 1.3 suite.
+  // TLS 1.2, table 15a: the five suites it names (TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+  // TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256, TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
+  // TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384, TLS_RSA_WITH_AES_128_CBC_SHA), in the order of the table,
+  // and no other: none with anonymous key exchange, NULL encryption or RC4, which the table forbids,
+  // nor any it does not name. The ECDHE ones come first and the server's order wins (clause 11.2.2:
+  // "Servers should use one of the above ECDHE cipher suites in preference as these provide forward
+  // secrecy and improved security against certain attacks."). Every one offers at least 112 bits:
+  // AES-128 is 128 and RSA with k = 2048 is 112 (NIST SP 800-57 Part 1 Rev 5 clause 5.6.1.1,
+  // table 2), and HMAC with SHA-1 is 128 (clause 5.6.1.2, table 3), given the key check below.
+  ciphers: [
+    'TLS_AES_128_GCM_SHA256', 'TLS_AES_256_GCM_SHA384', 'TLS_CHACHA20_POLY1305_SHA256',
+    'ECDHE-ECDSA-AES128-GCM-SHA256', 'ECDHE-RSA-AES128-GCM-SHA256',
+    'ECDHE-ECDSA-AES256-GCM-SHA384', 'ECDHE-RSA-AES256-GCM-SHA384', 'AES128-SHA',
+  ].join(':'),
+  honorCipherOrder: true,
+  // Clause 11.2.5, table 15c: secp256r1 and secp384r1 mandatory, secp521r1 optional; the groups
+  // offered for ECDHE in TLS 1.2 and for key exchange in TLS 1.3. RFC 8446 clause 9.1 asks for
+  // X25519 only "In the absence of an application profile standard specifying otherwise", and clause
+  // 7.3 names the curves "as defined in clause 11.2", so X25519 and the other groups are left out.
+  ecdhCurve: 'P-256:P-384:P-521',
+  // Clause 11.2.4, table 15b, the algorithms marked Mandatory or Optional; the Forbidden ones
+  // (md5WithRSAEncryption, rsa_pkcs1_sha1, ecdsa_sha1) are not offered.
+  sigalgs: [
+    'ecdsa_secp256r1_sha256', 'ecdsa_secp384r1_sha384', 'ecdsa_secp521r1_sha512',
+    'rsa_pss_rsae_sha256', 'rsa_pss_rsae_sha384', 'rsa_pss_rsae_sha512',
+    'rsa_pkcs1_sha256', 'rsa_pkcs1_sha384', 'rsa_pkcs1_sha512',
+  ].join(':'),
+};
+
+// The certificate and key, held to clauses 11.2.4 and 11.2.5, since the server chooses them:
+// - Clause 11.2.5: "Terminals shall support RSA keys with modulus size between 2 048 bits and 4 096
+//   bits." and "Terminals shall not trust RSA signatures that are less than 2 048 bits in size."
+//   Elliptic curve keys on a table 15c curve. No other key type is in tables 15b and 15c.
+// - Clause 11.2.1: terminals deem a connection failed when "Any signature required for certificate
+//   chain validation uses an algorithm or key size that is forbidden by the present document." Its
+//   NOTE 4 leaves out "signatures on root certificates", so a self-signed certificate's own
+//   signature is not checked; every other certificate in the file must be signed with a table 15b
+//   algorithm that is not Forbidden.
+const TLS_CURVES = { prime256v1: 'P-256', secp384r1: 'P-384', secp521r1: 'P-521' };
+const TLS_CERT_SIGNATURES = new Set(['sha256WithRSAEncryption', 'sha384WithRSAEncryption', 'sha512WithRSAEncryption',
+  'ecdsa-with-SHA256', 'ecdsa-with-SHA384', 'ecdsa-with-SHA512', 'RSASSA-PSS']);
+
+function tlsKeyProblem(what, key) {
+  const type = key.asymmetricKeyType, d = key.asymmetricKeyDetails || {};
+  if (type === 'rsa') {
+    if (d.modulusLength >= 2048 && d.modulusLength <= 4096) return null;
+    return `${what} is an RSA key of ${d.modulusLength} bits; ETSI TS 102 796 clause 11.2.5: "Terminals shall ` +
+           'support RSA keys with modulus size between 2 048 bits and 4 096 bits."';
+  }
+  if (type === 'ec') {
+    if (TLS_CURVES[d.namedCurve]) return null;
+    return `${what} is an elliptic curve key on ${d.namedCurve}, which is not a curve of ETSI TS 102 796 ` +
+           'clause 11.2.5, table 15c (P-256, P-384, P-521).';
+  }
+  return `${what} is a ${type} key; ETSI TS 102 796 clause 11.2, tables 15b and 15c, define RSA keys and ` +
+         'elliptic curve keys on P-256, P-384 and P-521 only.';
+}
+
+function tlsCredentialsProblem(keyPem, certPem) {
+  const pems = String(certPem).match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g) || [];
+  if (!pems.length) return 'HTTPS_CERT_PATH holds no PEM certificate.';
+  const certs = pems.map(p => new crypto.X509Certificate(p));
+  const key = crypto.createPrivateKey(keyPem);
+  if (!certs[0].checkPrivateKey(key)) return 'the private key does not belong to the first certificate in HTTPS_CERT_PATH.';
+  const own = tlsKeyProblem('The private key', key);
+  if (own) return own;
+  for (const [i, c] of certs.entries()) {
+    const which = `Certificate ${i + 1} in HTTPS_CERT_PATH (${c.subject.replace(/\n/g, ', ')})`;
+    const k = tlsKeyProblem(`${which} has a public key that`, c.publicKey);
+    if (k) return k;
+    const selfSigned = c.checkIssued(c) && c.verify(c.publicKey);
+    if (!selfSigned && !TLS_CERT_SIGNATURES.has(c.signatureAlgorithm)) {
+      return `${which} is signed with ${c.signatureAlgorithm}, which ETSI TS 102 796 clause 11.2.4, table 15b, ` +
+             'does not allow ("Terminals shall not trust any signature that uses an algorithm designated as forbidden.").';
+    }
+  }
+  return null;
 }
 
 function startServer(env = process.env, port = PORT) {
@@ -1806,11 +1898,15 @@ function startServer(env = process.env, port = PORT) {
   if (keyPath || certPath) {
     if (!keyPath || !certPath) throw new Error('HTTPS_KEY_PATH and HTTPS_CERT_PATH must be set together');
     if (mode !== undefined) throw new Error(`PLAIN_HTTP=${mode} cannot be combined with HTTPS_KEY_PATH and HTTPS_CERT_PATH`);
-    // createServer parses the key and certificate, so one that cannot be read or parsed throws here.
-    const server = https.createServer({ key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath) }, app);
+    // An unreadable or unparsable key or certificate throws here, as does one outside the profile.
+    const key = fs.readFileSync(keyPath), cert = fs.readFileSync(certPath);
+    const problem = tlsCredentialsProblem(key, cert);
+    if (problem) throw new Error(`TLS key and certificate not within ETSI TS 102 796 clause 11.2: ${problem}`);
+    const server = https.createServer({ ...TLS_PROFILE, key, cert }, app);
     publicScheme = 'https';
     return server.listen(port, () => {
-      logger.info('DVB-I Application Provider and Admin Portal listening (https)', { port });
+      logger.info('DVB-I Application Provider and Admin Portal listening (https)', { port,
+        minVersion: TLS_PROFILE.minVersion, maxVersion: TLS_PROFILE.maxVersion });
       console.log(`DVB-I Application Provider and Admin Portal  →  https://localhost:${port}`);
     });
   }
@@ -1837,5 +1933,6 @@ if (require.main === module) {
 
 module.exports = {
   app, startServer, buildServiceList, buildSchedule, msDur, cgsidProblem, mbmsLocatorProblem,
-  scheduleDocument, programDocument, deepLinkedAit, catchupProblem, catchupPlayerWarning,
+  scheduleDocument, programDocument, deepLinkedAit, catchupProblem, catchupPlayerWarning, TLS_PROFILE,
+  tlsCredentialsProblem,
 };

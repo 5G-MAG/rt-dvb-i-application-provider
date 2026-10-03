@@ -108,9 +108,14 @@ no warning, and writes the endpoint URLs in the service list as `https://`, the 
 the proxy with. `PLAIN_HTTP=private-subnet` is still accepted and means the same as leaving
 `PLAIN_HTTP` unset. Any other value, or `PLAIN_HTTP` together with a key and certificate, is refused.
 
-TLS 1.2 and 1.3 are offered (Node's defaults). The root certificates, cipher suites, signature
-algorithms, key sizes and curves of ETSI TS 102 796 clause 11.2, which clause 7.3 refers to, are not
-configured or checked here.
+The TLS profile is set explicitly from ETSI TS 102 796 V1.8.1 clause 11.2, which clause 7.3 refers
+to: TLS 1.2 and 1.3 only; for TLS 1.2 the five suites of table 15a, ECDHE first and in the server's
+order; for TLS 1.3 the three suites of RFC 8446 clause 9.1; the curves P-256, P-384 and P-521 of
+table 15c (no X25519); and the signature algorithms of table 15b that are not Forbidden. The key must
+be RSA of 2 048 to 4 096 bits or elliptic curve on P-256, P-384 or P-521, and every certificate in
+`HTTPS_CERT_PATH` other than a self-signed one must be signed with a table 15b algorithm that is not
+Forbidden; otherwise the server does not start. Whether the certificate chains to a root on the HbbTV
+root certificate list (clause 11.2.3) is not checked: that is the operator's choice of CA.
 
 ## Receiver: pinned player libraries + CSP
 
