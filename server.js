@@ -1850,8 +1850,56 @@ const TLS_PROFILE = {
 //   signature is not checked; every other certificate in the file must be signed with a table 15b
 //   algorithm that is not Forbidden.
 const TLS_CURVES = { prime256v1: 'P-256', secp384r1: 'P-384', secp521r1: 'P-521' };
-const TLS_CERT_SIGNATURES = new Set(['sha256WithRSAEncryption', 'sha384WithRSAEncryption', 'sha512WithRSAEncryption',
-  'ecdsa-with-SHA256', 'ecdsa-with-SHA384', 'ecdsa-with-SHA512', 'RSASSA-PSS']);
+// The algorithms by object identifier: pkcs-1 is 1.2.840.113549.1.1 (IETF RFC 8017 appendix C), with
+// sha256WithRSAEncryption { pkcs-1 11 }, sha384WithRSAEncryption { pkcs-1 12 }, sha512WithRSAEncryption
+// { pkcs-1 13 } and id-RSASSA-PSS { pkcs-1 10 } (IETF RFC 4055 clauses 5 and 3.1); ecdsa-with-SHA256,
+// -SHA384 and -SHA512 are 1.2.840.10045.4.3.2, .3 and .4 (IETF RFC 5758 clause 3.2).
+const TLS_CERT_SIGNATURES = new Map([
+  ['1.2.840.113549.1.1.11', 'sha256WithRSAEncryption'], ['1.2.840.113549.1.1.12', 'sha384WithRSAEncryption'],
+  ['1.2.840.113549.1.1.13', 'sha512WithRSAEncryption'], ['1.2.840.113549.1.1.10', 'RSASSA-PSS'],
+  ['1.2.840.10045.4.3.2', 'ecdsa-with-SHA256'], ['1.2.840.10045.4.3.3', 'ecdsa-with-SHA384'],
+  ['1.2.840.10045.4.3.4', 'ecdsa-with-SHA512'],
+]);
+// Named in a refusal only: md5WithRSAEncryption { pkcs-1 4 } and sha1WithRSAEncryption { pkcs-1 5 }
+// (IETF RFC 8017 appendix C), which table 15b forbids.
+const TLS_CERT_SIGNATURES_REFUSED = new Map([
+  ['1.2.840.113549.1.1.4', 'md5WithRSAEncryption'], ['1.2.840.113549.1.1.5', 'sha1WithRSAEncryption'],
+]);
+
+// One DER element at offset at of buf: its tag and where its contents start and end.
+function derElement(buf, at) {
+  if (at + 2 > buf.length) return null;
+  let len = buf[at + 1], start = at + 2;
+  if (len & 0x80) {
+    const n = len & 0x7f;
+    if (n === 0 || n > 4 || start + n > buf.length) return null;
+    len = 0;
+    for (let i = 0; i < n; i++) len = len * 256 + buf[start + i];
+    start += n;
+  }
+  return start + len <= buf.length ? { tag: buf[at], start, end: start + len } : null;
+}
+
+// The signatureAlgorithm object identifier of a DER certificate, dotted, or null when the DER is not
+// of that form. IETF RFC 5280 clause 4.1: "Certificate  ::=  SEQUENCE  {" tbsCertificate,
+// signatureAlgorithm, signatureValue. Read from the DER because X509Certificate.signatureAlgorithm
+// and signatureAlgorithmOid exist only from Node.js 24.9.0.
+function certSignatureOid(der) {
+  const cert = derElement(der, 0);
+  const tbs = cert && cert.tag === 0x30 && derElement(der, cert.start);
+  const alg = tbs && tbs.tag === 0x30 && derElement(der, tbs.end);
+  const oid = alg && alg.tag === 0x30 && derElement(der, alg.start);
+  if (!oid || oid.tag !== 0x06 || oid.end <= oid.start) return null;
+  const arcs = [];
+  let v = 0;
+  for (let i = oid.start; i < oid.end; i++) {
+    v = v * 128 + (der[i] & 0x7f);
+    if (!(der[i] & 0x80)) { arcs.push(v); v = 0; }
+  }
+  if (!arcs.length) return null;
+  const first = arcs[0] < 80 ? Math.floor(arcs[0] / 40) : 2;
+  return [first, arcs[0] - first * 40, ...arcs.slice(1)].join('.');
+}
 
 function tlsKeyProblem(what, key) {
   const type = key.asymmetricKeyType, d = key.asymmetricKeyDetails || {};
@@ -1882,8 +1930,10 @@ function tlsCredentialsProblem(keyPem, certPem) {
     const k = tlsKeyProblem(`${which} has a public key that`, c.publicKey);
     if (k) return k;
     const selfSigned = c.checkIssued(c) && c.verify(c.publicKey);
-    if (!selfSigned && !TLS_CERT_SIGNATURES.has(c.signatureAlgorithm)) {
-      return `${which} is signed with ${c.signatureAlgorithm}, which ETSI TS 102 796 clause 11.2.4, table 15b, ` +
+    const oid = certSignatureOid(c.raw);
+    if (!selfSigned && !TLS_CERT_SIGNATURES.has(oid)) {
+      const alg = TLS_CERT_SIGNATURES_REFUSED.get(oid) || `the algorithm ${oid || 'that cannot be read'}`;
+      return `${which} is signed with ${alg}, which ETSI TS 102 796 clause 11.2.4, table 15b, ` +
              'does not allow ("Terminals shall not trust any signature that uses an algorithm designated as forbidden.").';
     }
   }
@@ -1935,5 +1985,5 @@ if (require.main === module) {
 module.exports = {
   app, startServer, buildServiceList, buildSchedule, msDur, cgsidProblem, mbmsLocatorProblem,
   scheduleDocument, programDocument, deepLinkedAit, catchupProblem, catchupPlayerWarning, TLS_PROFILE,
-  tlsCredentialsProblem,
+  tlsCredentialsProblem, certSignatureOid,
 };
