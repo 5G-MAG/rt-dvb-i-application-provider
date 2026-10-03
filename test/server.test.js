@@ -254,6 +254,17 @@ test('mbmsLocatorProblem: rejects what clause 8.2.2 does not allow', () => {
   ]) assert.ok(mbmsLocatorProblem(u), u);
 });
 
+test('mbmsLocatorProblem: an IP-literal host is IPv6address or IPvFuture (RFC 3986 clause 3.2.2)', () => {
+  for (const h of ['[::1]', '[2001:db8::7]', '[v1.fe]', '[V7.a:b]', '[1:2:3:4:5:6:7:8]', '[::ffff:192.0.2.1]',
+    '[1::]', '[::]', '[1:2:3:4:5:6::8]']) {
+    assert.equal(mbmsLocatorProblem(`mbms://${h}/x`), null, h);
+  }
+  for (const h of ['[1]', '[:]', '[::g]', '[1:2:3:4:5:6:7:8:9]', '[1::2::3]', '[::256.1.1.1]', '[12345::]',
+    '[v.fe]', '[v1.]', '[]']) {
+    assert.ok(mbmsLocatorProblem(`mbms://${h}/x`), h);
+  }
+});
+
 test('buildServiceList: a 5G Broadcast instance is IdentifierBasedDeliveryParameters holding the mbms:// URL', () => {
   const url = 'mbms://service1000.mbms.operator.com&label=http://www.example.com/videos/sample.mp4';
   const xml = buildServiceList('http://x', sampleConfig({
