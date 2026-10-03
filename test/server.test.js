@@ -486,6 +486,13 @@ test('SubscriptionPackageList lists each package used on a service instance once
   assert.equal(parse(buildServiceList('http://x', cfg)).find('//d:SubscriptionPackageList', NS).length, 0);
 });
 
+// The first bytes of each format: PNG signature (ISO/IEC 15948 clause 5.2); JFIF: X'FF', SOI, X'FF',
+// APP0, length, "JFIF", X'00' (JFIF 1.02); GIF89a.
+const PNG_BYTES = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4c50000000049454e44ae426082', 'hex');
+const JFIF_BYTES = Buffer.from('ffd8ffe000104a46494600010100000100010000ffd9', 'hex');
+const EXIF_BYTES = Buffer.from('ffd8ffe1001845786966000049492a00080000000000ffd9', 'hex');
+const GIF_BYTES = Buffer.from('474946383961010001000000002c00000000010001000002003b', 'hex');
+
 test('service logo is signalled only as image/jpeg or image/png (clause 5.2.6.2)', () => {
   const logoTypes = logoUrl => {
     const doc = parse(buildServiceList('http://x', sampleConfig({ logoUrl })));
@@ -495,8 +502,12 @@ test('service logo is signalled only as image/jpeg or image/png (clause 5.2.6.2)
   assert.deepEqual(logoTypes('/logos/uploaded/a.png'), ['image/png']);
   assert.deepEqual(logoTypes('https://img.example.com/a.JPG'), ['image/jpeg']);
   assert.deepEqual(logoTypes('data:image/png;base64,iVBORw0KGgo='), ['image/png']);
+  assert.deepEqual(logoTypes(`data:image/jpeg;base64,${JFIF_BYTES.toString('base64')}`), ['image/jpeg']);
+  assert.deepEqual(logoTypes(`data:image/png,${[...PNG_BYTES.subarray(0, 8)].map(b => '%' + b.toString(16).padStart(2, '0')).join('')}`),
+    ['image/png'], 'percent-encoded data URL');
   for (const other of ['', '/logos/uploaded/a.svg', 'https://img.example.com/a.webp',
-    'https://img.example.com/a.gif', 'http://localhost:4000/logos/svc-a']) {
+    'https://img.example.com/a.gif', 'http://localhost:4000/logos/svc-a',
+    `data:image/png;base64,${GIF_BYTES.toString('base64')}`, `data:image/jpeg;base64,${EXIF_BYTES.toString('base64')}`]) {
     assert.deepEqual(logoTypes(other), [], `"${other}" is not a JPEG or PNG logo`);
   }
 });
@@ -513,7 +524,34 @@ test('logo upload accepts PNG and JPEG and refuses other image types with 400', 
     assert.equal(res.status, 400, name);
     assert.match((await res.json()).error, /PNG or JPEG/);
   }
-  assert.equal((await upload('a.jpg', 'image/jpeg')).status, 200);
+  assert.equal((await upload('a.jpg', 'image/jpeg')).status, 400, 'one byte is not a JFIF file');
+}));
+
+
+test('logo upload: the file\'s bytes must be the format its extension names (TS 102 796 clause 7.1.1, OIPF vol 2 clause 9.1)', () => withServer(async base => {
+  assert.equal((await putConfig(base, sampleConfig())).status, 200);
+  const upload = (bytes, name, type) => {
+    const form = new FormData();
+    form.append('logo', new Blob([bytes], { type }), name);
+    return fetch(`${base}/api/logos/upload/svc-a`, { method: 'POST', body: form });
+  };
+  const ok = await upload(PNG_BYTES, 'a.png', 'image/png');
+  assert.equal(ok.status, 200);
+  const stored = path.join(ROOT, 'public', (await ok.json()).url);
+  assert.ok(fs.readFileSync(stored).equals(PNG_BYTES), 'stored as uploaded');
+  for (const [bytes, name, type, why] of [
+    [GIF_BYTES, 'a.png', 'image/png', 'a GIF named .png'],
+    [JFIF_BYTES, 'a.png', 'image/png', 'a JPEG named .png'],
+    [PNG_BYTES, 'b.jpg', 'image/jpeg', 'a PNG named .jpg'],
+    [EXIF_BYTES, 'b.jpg', 'image/jpeg', 'a JPEG without the JFIF APP0 marker'],
+  ]) {
+    const res = await upload(bytes, name, type);
+    assert.equal(res.status, 400, why);
+    assert.match((await res.json()).error, type === 'image/png' ? /PNG signature/ : /JFIF/, why);
+  }
+  assert.ok(fs.readFileSync(stored).equals(PNG_BYTES), 'a refused upload leaves the logo on disk as it was');
+  assert.equal((await upload(JFIF_BYTES, 'b.jpeg', 'image/jpeg')).status, 200, 'JFIF accepted');
+  assert.equal((await getConfig(base)).services[0].logoUrl, '/logos/uploaded/svc-a.jpeg');
 }));
 
 test('image_variant outside table 8 is answered 400 on every endpoint (clause 5.2.8.2.1)', () => withServer(async base => {

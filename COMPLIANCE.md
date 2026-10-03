@@ -255,6 +255,16 @@ where wrong:
 - **A service without a JPEG or PNG logo is published without a logo.** Clause 5.2.6.2 requires at
   least one logo of those types; the generated letter placeholder is SVG, so it is shown in the
   editor but not signalled in the list. Uploads are limited to PNG and JPEG.
+- **Image formats are checked where the provider holds the bytes.** ETSI TS 102 796 V1.8.1 clause
+  7.1.1 (through TS 103 770 V1.2.1 clause 5.2.8.3, GIF excepted) points to OIPF Release 2 volume 2
+  V2.3 clause 9.1, which names "JPEG [ JFIF ], GIF [ GIF ] and PNG [ PNG ]". An uploaded logo must
+  start with the PNG signature (ISO/IEC 15948 clause 5.2, checked in the 2003 issue; OIPF cites
+  2004) or carry the JFIF APP0 marker right after SOI (JFIF 1.02), matching its extension, or it is
+  refused; a JPEG without the JFIF marker (an Exif-only file) is refused. A `data:` logo or
+  programme image is signalled only when its bytes match its media type. Not checked: an image at a
+  remote URL (signalled from its file extension; the provider never fetches it), the SOI and APP0
+  code values (defined in ISO/IEC 10918-1, not held), anything past the first bytes of the file,
+  and logos uploaded before this check.
 
 - **An existing `@CGSID` that `xs:ID` forbids is not migrated.** A write that would introduce one
   is now rejected with a message naming the value and the rule, but a list that already carries a

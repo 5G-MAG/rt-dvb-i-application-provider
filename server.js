@@ -601,19 +601,13 @@ setInterval(() => { const now = Date.now(); for (const [k, b] of _rateBuckets) i
 
 // ── Logo upload (multer) ──────────────────────────────────────────────────────
 
-const logoStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, LOGOS_DIR),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase() || '.png';
-    cb(null, `${req.params.id}${ext}`);
-  },
-});
-
 // An uploaded logo is the service's only logo, and clause 5.2.6.2 requires at least one to be
-// image/jpeg or image/png, so those are the types accepted.
+// image/jpeg or image/png, so those are the types accepted. The file is held in memory until its
+// bytes are known to be what its extension says (imageBytesMatch), so a refused upload never
+// replaces the logo already on disk.
 const LOGO_EXTS = new Set(['.png', '.jpg', '.jpeg']);
 const logoUpload = multer({
-  storage: logoStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 2 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
@@ -630,11 +624,18 @@ app.post('/api/logos/upload/:id', requireAdmin, rateLimit('mutate', 30, 60000), 
 ), (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
   const svc = config.services.find(s => s.id === req.params.id);
-  if (!svc) {
-    try { fs.unlinkSync(req.file.path); } catch (_) {}
-    return res.status(404).json({ error: 'Service not found' });
+  if (!svc) return res.status(404).json({ error: 'Service not found' });
+  const ext = path.extname(req.file.originalname).toLowerCase();
+  const type = detectMimeType(`x${ext}`);
+  if (!imageBytesMatch(type, req.file.buffer)) {
+    return res.status(400).json({ error: type === 'image/png'
+      ? 'The file is not a PNG image: it does not start with the PNG signature (ISO/IEC 15948 clause 5.2).'
+      : 'The file is not a JFIF JPEG image: it has no JFIF APP0 marker right after the SOI marker (JPEG File ' +
+        'Interchange Format 1.02, the JPEG format OIPF Release 2 volume 2 clause 9.1 names).' });
   }
-  const relativePath = `/logos/uploaded/${req.file.filename}`;
+  const filename = `${req.params.id}${ext}`;
+  writeFileAtomic(path.join(LOGOS_DIR, filename), req.file.buffer);
+  const relativePath = `/logos/uploaded/${filename}`;
   const prev = JSON.parse(JSON.stringify(config));
   svc.logoUrl = relativePath;
   assignVersions(config, prev, [svc.uid]);
@@ -722,6 +723,52 @@ const GENRE_CS = {
   factual:       `${CONTENT_CS}:3.1.3`,    // General non-fiction
 };
 const GENRE_CS_DEFAULT = `${CONTENT_CS}:3.1.3`; // General non-fiction
+
+// ETSI TS 102 796 V1.8.1 clause 7.1.1: "The graphics formats used shall comply with clause 9.1 of
+// the OIPF media formats specification [2]." OIPF Release 2 volume 2 V2.3 clause 9.1 names the
+// formats "JPEG [ JFIF ], GIF [ GIF ] and PNG [ PNG ]" and requires "The mime type of "image/png"
+// shall be used for compliant PNG images." (likewise image/jpeg for JPEG); TS 103 770 V1.2.1 clause
+// 5.2.8.3 excepts GIF. So an image is signalled as image/png or image/jpeg only when its bytes are
+// that format, wherever the provider has the bytes (an upload, a data: URL).
+//
+// PNG, [PNG] = ISO/IEC 15948 (OIPF cites the 2004 issue; checked in the W3C Recommendation of
+// 2003-11-10, which is ISO/IEC 15948:2003), clause 5.2: "The first eight bytes of a PNG datastream
+// always contain the following (decimal) values: 137 80 78 71 13 10 26 10".
+// JPEG, [JFIF] = JPEG File Interchange Format 1.02: "The JPEG FIF APP0 marker is mandatory right
+// after the SOI marker." and "you can identify a JFIF file by looking for the following sequence:
+// X'FF', SOI, X'FF', APP0, <2 bytes to be skipped>, "JFIF", X'00'." The code values of SOI and APP0
+// are defined in ISO/IEC 10918-1, which is not held, so those two bytes are not checked.
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const JFIF_IDENTIFIER = Buffer.from('JFIF\0', 'latin1');
+function imageBytesMatch(type, buf) {
+  if (!Buffer.isBuffer(buf)) return false;
+  if (type === 'image/png') return buf.length >= 8 && buf.subarray(0, 8).equals(PNG_SIGNATURE);
+  if (type === 'image/jpeg') {
+    return buf.length >= 11 && buf[0] === 0xff && buf[2] === 0xff && buf.subarray(6, 11).equals(JFIF_IDENTIFIER);
+  }
+  return false;
+}
+
+// The octets of an RFC 2397 data URL, "data:[<mediatype>][;base64],<data>": base64, or "the
+// standard %xx hex encoding of URLs" without ";base64". null when it cannot be decoded.
+function dataUrlBytes(url) {
+  const comma = url.indexOf(',');
+  if (!/^data:/i.test(url) || comma < 0) return null;
+  const payload = url.slice(comma + 1);
+  try {
+    return /;base64$/i.test(url.slice(0, comma)) ? Buffer.from(payload, 'base64')
+      : Buffer.from(unescape(payload), 'latin1');
+  } catch (_) { return null; }
+}
+
+// The Media Type to signal for an image: image/jpeg or image/png, or null when the image is neither
+// or, for a data: URL, its bytes are not the format its media type names.
+function signalledImageType(url) {
+  const type = detectMimeType(url);
+  if (type !== 'image/jpeg' && type !== 'image/png') return null;
+  if (/^data:/i.test(url || '') && !imageBytesMatch(type, dataUrlBytes(url))) return null;
+  return type;
+}
 
 // The image Media Type of a logo URL: from the media type of an RFC 2397 data URL, otherwise from
 // the file extension. null when neither says, since a type that is not known cannot be signalled.
@@ -825,7 +872,7 @@ ${[...langSet].map(l => `    <Language>${xe(l)}</Language>`).join('\n')}
     // validation, while still looking plausible in the rendered XML.
     const logoAbs  = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(s.logoUrl || '') || (s.logoUrl || '').startsWith('//');
     const logoUri  = logoAbs ? xe(s.logoUrl) : `${xe(base)}${xe(s.logoUrl || '')}`;
-    const logoType = s.logoUrl ? detectMimeType(s.logoUrl) : null;
+    const logoType = s.logoUrl ? signalledImageType(s.logoUrl) : null;
 
     // ServiceInstance blocks — XSD sequence: DisplayName, ContentProtection, ContentAttributes, delivery
     const instanceBlocks = (s.instances || []).map(inst => {
@@ -1208,7 +1255,7 @@ const emptyTables = cfg => tvaMain(cfg, `
 function programInformation(svc, ev, seriesCrids, { memberOf, imageVariant } = {}) {
   // Table 59, row MediaLocator: "At least one image shall be provided with the Media Type
   // image/jpeg or image/png", so a programme's single image is signalled only when it is one of those.
-  const imgType = ev.image ? detectMimeType(ev.image) : null;
+  const imgType = ev.image ? signalledImageType(ev.image) : null;
   const imgEl = !imageVariant && (imgType === 'image/jpeg' || imgType === 'image/png')
     ? `\n        <RelatedMaterial>
           <HowRelated href="urn:tva:metadata:cs:HowRelatedCS:2012:19"/>
