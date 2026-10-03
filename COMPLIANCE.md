@@ -208,6 +208,25 @@ where wrong:
     7.2.3.1, table 5, row "5.2.5 Platform profiles". Clause 5.2.4.2 cites it as reference [21],
     which is undated, so the latest issue applies; V1.8.1 is that issue as of 2026-10-02. A later
     issue that adds a version needs the list in `server.js` extended.
+  - **Which platform version an XML AIT may carry is a reading of table 5.** The row's Notes cell
+    reads "The version fields shall be set as follows:" followed by "version.major = 1",
+    "version.minor = 8" and "version.micro = 1", and then "Additionally terminals shall launch
+    applications signalled with the following values for major, minor and micro - [1.1.1], [1.2.1],
+    [1.3.1], [1.4.1], [1.5.1], [1.6.1], [1.7.1] and [1.8.1] - and run them as defined by the
+    requirements in the present document." The first sentence names no subject. Two readings:
+    - *Minimum required version* (what the provider checks): the fields carry the minimum version
+      the application needs, any of the eight launchable values. ETSI TS 102 809 V1.3.1 clause
+      5.2.5.1: "These fields define the minimum platform profile and version of that profile
+      required by the application." The same cell's example supports it: "an application signalled
+      as requiring [1.1.1] is able to detect that it is running on a [1.8.1] terminal". Table 7, row
+      mhpVersion, asks only that higher values fail: "Values higher than those defined in Table 5
+      shall result in the application failing to start."
+    - *1.8.1 in every XML AIT*: "shall be set as follows" binds whoever writes the AIT under this
+      issue, and the eight values only say what a terminal must still accept from older
+      applications.
+    The check accepts the eight values, which meets the first reading. Under the second, any value
+    other than 1.8.1 differs. Entering 1.8.1 meets both, at the cost that a terminal of an earlier
+    issue does not launch the player. Kept as it is until the reading is settled.
   - **`version` of an HbbTV application**: TS 102 796 table 7 replaces its type with
     `mhp:unsignedInt31Bit`, which is not defined in the schemas held; only the `ipi:Version` form
     of `mis_xmlait.xsd` (two hexadecimal digits) is checked.
