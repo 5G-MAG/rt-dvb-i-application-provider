@@ -369,6 +369,19 @@ function catchupPlayerProblem(p) {
   return null;
 }
 
+// ETSI TS 102 796 V1.8.1 clause 11.9: "Application providers should not use "http://" and should use
+// "https://" instead." Table 7 (clause 7.2.3.2) points to it for the XML AIT, so an http: URLBase is
+// published, being allowed, but named in the log at start-up and on every save, and in the editor.
+function catchupPlayerWarning(cfg) {
+  const p = cfg && cfg.catchupPlayer;
+  if (!p || p.type !== HBBTV_APP_TYPE || typeof p.urlBase !== 'string') return null;
+  let scheme;
+  try { scheme = new URL(p.urlBase).protocol; } catch (_) { return null; }
+  if (scheme !== 'http:') return null;
+  return `catchupPlayer: the HbbTV application's URLBase "${p.urlBase}" is http:. ETSI TS 102 796 clause 11.9: ` +
+         '"Application providers should not use "http://" and should use "https://" instead."';
+}
+
 // applicationLocation of the deep link: the configured location with the programme's catch-up URL
 // as the configured query parameter. Clause 5.2.4.3: "Within the XML AIT the concatenation of
 // URLBase and applicationLocation shall form a URL specifying an application launch location that
@@ -500,6 +513,8 @@ let config    = loadConfig();
   if (mbms) logger.warn('Service list carries an invalid MBMS locator', { problem: mbms });
   const pub = publishProblem(config);
   if (pub) logger.warn('Service list will not be accepted on its next publish', { problem: pub });
+  const cup = catchupPlayerWarning(config);
+  if (cup) logger.warn('Catch-up player URLBase is http:', { problem: cup });
 }
 // Floored to whole seconds: HTTP-date precision is 1s, so a sub-second lastSaved
 // would never satisfy If-Modified-Since and 304s would never fire right after a save.
@@ -1558,6 +1573,13 @@ function _hasUnsafeKeys(obj, depth = 0) {
   return false;
 }
 
+// What a save published that a "should" advises against: logged, and returned for the editor to show.
+function savedWarnings(cfg) {
+  const cup = catchupPlayerWarning(cfg);
+  if (cup) logger.warn('Catch-up player URLBase is http:', { problem: cup });
+  return cup ? [cup] : [];
+}
+
 app.put('/api/config', requireAdmin, rateLimit('mutate', 30, 60000), (req, res) => {
   try {
     const updated = req.body;
@@ -1575,8 +1597,9 @@ app.put('/api/config', requireAdmin, rateLimit('mutate', 30, 60000), (req, res) 
     saveHistory(config); // snapshot previous state
     config = updated;
     saveConfig(config); // also bumps lastSaved
+    const warnings = savedWarnings(config);
     const base = publicBase(req);
-    res.json({ ok: true, version: config.version, xml: buildServiceList(base, config) });
+    res.json({ ok: true, version: config.version, warnings, xml: buildServiceList(base, config) });
   } catch (e) {
     // assertValidConfigShape throws a plain validation Error; distinguish from real server errors
     res.status(e instanceof Error && /^config/.test(e.message) ? 400 : 500).json({ error: String(e.message || e) });
@@ -1615,7 +1638,7 @@ app.post('/api/history/restore/:filename', requireAdmin, rateLimit('mutate', 30,
     saveHistory(config); // snapshot current state before restoring
     config = data;
     saveConfig(config);
-    res.json({ ok: true, version: config.version });
+    res.json({ ok: true, version: config.version, warnings: savedWarnings(config) });
   } catch (e) { res.status(404).json({ error: 'Not found or invalid: ' + String(e) }); }
 });
 
@@ -1767,5 +1790,5 @@ if (require.main === module) {
 
 module.exports = {
   app, startServer, buildServiceList, buildSchedule, msDur, cgsidProblem, mbmsLocatorProblem,
-  scheduleDocument, programDocument, deepLinkedAit, catchupProblem,
+  scheduleDocument, programDocument, deepLinkedAit, catchupProblem, catchupPlayerWarning,
 };

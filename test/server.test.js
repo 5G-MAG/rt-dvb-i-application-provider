@@ -1006,6 +1006,36 @@ test('editor: the catch-up player round-trips through the form unchanged, and an
   assert.equal(ctx.out, null);
 });
 
+test('an HbbTV player with an http: URLBase is published with a warning, at save and in the editor (TS 102 796 clause 11.9)', () => withServer(async base => {
+  const { catchupPlayerWarning } = require('../server.js');
+  const http = guideConfig(); http.catchupPlayer.urlBase = 'http://player.example.com/';
+  assert.match(catchupPlayerWarning(http) || '', /clause 11\.9/);
+  assert.equal(catchupPlayerWarning(guideConfig()), null, 'https: needs no warning');
+  const html = guideConfig(); Object.assign(html.catchupPlayer, { type: 'text/html', controlCode: 'PRESENT',
+    urlBase: 'http://player.example.com/app' });
+  assert.equal(catchupPlayerWarning(html), null, 'clause 11.9 is reached through table 7, for the HbbTV type');
+  const res = await putConfig(base, http);
+  assert.equal(res.status, 200, 'a "should not": published, not refused');
+  const body = await res.json();
+  assert.equal(body.warnings.length, 1);
+  assert.match(body.warnings[0], /should use "https:\/\/" instead/);
+  assert.deepEqual((await (await putConfig(base, guideConfig())).json()).warnings, []);
+
+  const vm = require('node:vm');
+  const page = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
+  const src = page.match(/function checkUrlBaseScheme\(\) \{[\s\S]*?\n\}/)[0];
+  const els = { 'cup-type': { value: 'application/vnd.hbbtv.xhtml+xml' }, 'cup-urlBase': { value: 'http://p.example/' },
+    'cup-urlBase-warning': { textContent: '', hidden: true } };
+  const ctx = { document: { getElementById: id => els[id] } };
+  vm.createContext(ctx);
+  vm.runInContext(`${src}; checkUrlBaseScheme();`, ctx);
+  assert.equal(els['cup-urlBase-warning'].hidden, false);
+  assert.match(els['cup-urlBase-warning'].textContent, /clause 11\.9/);
+  els['cup-urlBase'].value = 'https://p.example/';
+  vm.runInContext('checkUrlBaseScheme();', ctx);
+  assert.equal(els['cup-urlBase-warning'].hidden, true);
+}));
+
 test('PUT /api/config refuses a catch-up URL without a catch-up player, and accepts both or neither (clause 6.5.4.1, table 52)', () => withServer(async base => {
   const cfg = guideConfig();
   delete cfg.catchupPlayer;

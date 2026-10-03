@@ -230,6 +230,10 @@ where wrong:
   - **`version` of an HbbTV application**: TS 102 796 table 7 replaces its type with
     `mhp:unsignedInt31Bit`, which is not defined in the schemas held; only the `ipi:Version` form
     of `mis_xmlait.xsd` (two hexadecimal digits) is checked.
+  - **An http: URL base for an HbbTV player is published with a warning**, not refused. ETSI
+    TS 102 796 V1.8.1 clause 11.9: "Application providers should not use "http://" and should use
+    "https://" instead." It is a "should", so the warning is logged at start-up and on every save,
+    returned to the editor, and shown under the URL Base field.
   - **`orgId`** is checked for range only; whether it is registered with DVB is not.
   - **No `application/vnd.dvbi.non` XML AIT.** Clause 5.2.4.2 requires one where the provider "is
     unable to provide a suitable application based on device specific information". This provider

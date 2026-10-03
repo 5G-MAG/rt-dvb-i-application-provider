@@ -428,7 +428,7 @@
       <div class="field"><label>Organisation ID <span style="font-weight:400;text-transform:none">(registered with DVB)</span></label><input id="cup-orgId" type="text" inputmode="numeric"/></div>
       <div class="field"><label>Application ID</label><input id="cup-appId" type="text" inputmode="numeric"/></div>
       <div class="field"><label>Application Type</label>
-        <select id="cup-type"><option value=""></option><option>application/vnd.hbbtv.xhtml+xml</option><option>text/html</option><option>application/xhtml+xml</option></select></div>
+        <select id="cup-type" onchange="checkUrlBaseScheme()"><option value=""></option><option>application/vnd.hbbtv.xhtml+xml</option><option>text/html</option><option>application/xhtml+xml</option></select></div>
     </div>
     <div class="form-row">
       <div class="field"><label>Control Code</label>
@@ -445,10 +445,11 @@
       <div class="field"><label>Platform Version <span style="font-weight:400;text-transform:none">(major.minor.micro)</span></label><input id="cup-platformVersion" type="text" placeholder="1.8.1"/></div>
     </div>
     <div class="form-row">
-      <div class="field"><label>URL Base</label><input id="cup-urlBase" type="url" placeholder="https://player.example.com/" style="font-family:monospace;font-size:0.82rem"/></div>
+      <div class="field"><label>URL Base</label><input id="cup-urlBase" type="url" placeholder="https://player.example.com/" style="font-family:monospace;font-size:0.82rem" oninput="checkUrlBaseScheme()"/></div>
       <div class="field"><label>Location <span style="font-weight:400;text-transform:none">(relative to URL base)</span></label><input id="cup-location" type="text" style="font-family:monospace;font-size:0.82rem"/></div>
       <div class="field"><label>Catch-up URL Parameter</label><input id="cup-contentParameter" type="text" style="font-family:monospace;font-size:0.82rem"/></div>
     </div>
+    <div id="cup-urlBase-warning" hidden style="font-size:0.78rem;color:var(--warning);margin-top:0.4rem"></div>
   </div>
 
   <!-- Services -->
@@ -815,6 +816,7 @@ let editingId = null;   // null = new service
 async function init() {
   config = await fetch('/api/config').then(r => r.json());
   populateSettings();
+  checkUrlBaseScheme();
   renderServices();
   refreshTemplates();
   refreshXML();
@@ -871,6 +873,19 @@ function readCatchupPlayer() {
   for (const k of ['orgId', 'appId']) if (/^\d+$/.test(p[k] || '')) p[k] = Number(p[k]);
   if (p.serviceBound === 'true' || p.serviceBound === 'false') p.serviceBound = p.serviceBound === 'true';
   return p;
+}
+
+// ETSI TS 102 796 V1.8.1 clause 11.9: "Application providers should not use "http://" and should use
+// "https://" instead." Shown while an HbbTV player's URL base is http:; the server publishes it and
+// logs the same warning.
+function checkUrlBaseScheme() {
+  const type = document.getElementById('cup-type').value;
+  const base = document.getElementById('cup-urlBase').value.trim();
+  const el = document.getElementById('cup-urlBase-warning');
+  const warn = type === 'application/vnd.hbbtv.xhtml+xml' && /^http:/i.test(base);
+  el.textContent = warn ? 'Warning: this HbbTV player\'s URL base is http:. ETSI TS 102 796 clause 11.9: ' +
+    '"Application providers should not use "http://" and should use "https://" instead."' : '';
+  el.hidden = !warn;
 }
 
 function readSettings() {
@@ -943,7 +958,8 @@ async function saveAll() {
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'Unknown error');
     config.version = data.version;
-    showToast(`Published (v${data.version}) — copy the Receiver URL from the bar above.`, 'success');
+    showToast(`Published (v${data.version}) — copy the Receiver URL from the bar above.` +
+      (data.warnings?.length ? ` Warning: ${data.warnings.join(' ')}` : ''), data.warnings?.length ? '' : 'success');
     updateXMLDisplay(data.xml);
     refreshSourceInfo();
   } catch (e) { showToast('Save failed: ' + e.message, 'error'); }
@@ -2040,11 +2056,13 @@ async function restoreHistory(filename) {
     if (!data.ok) throw new Error(data.error || 'Restore failed');
     config = await fetch('/api/config').then(r => r.json());
     populateSettings();
+    checkUrlBaseScheme();
     renderServices();
     refreshXML();
     refreshSourceInfo();
     closeHistory();
-    showToast(`Restored to v${data.version}. Review and Save &amp; Publish.`, 'success');
+    showToast(`Restored to v${data.version}. Review and Save &amp; Publish.` +
+      (data.warnings?.length ? ` Warning: ${data.warnings.join(' ')}` : ''), data.warnings?.length ? '' : 'success');
   } catch (e) { showToast('Restore failed: ' + e.message, 'error'); }
 }
 
