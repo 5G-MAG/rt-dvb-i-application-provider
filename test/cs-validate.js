@@ -14,7 +14,7 @@ https://www.5g-mag.com/license
  * XSD validation cannot do this job: every CS reference is carried in an @href typed anyURI, so a
  * schema-valid document can still name a term that does not exist in the scheme it cites. That is
  * not a hypothetical here. Three such terms were wrong in this generator and were corrected by
- * hand against the registries (see COMPLIANCE.md): a ServiceTypeCS term that is not in the scheme,
+ * hand against the registries: a ServiceTypeCS term that is not in the scheme,
  * ContentCS termIDs in a form the scheme does not use, and a SubtitlePurposeCS term from a year
  * that does not exist. Nothing re-checks that by itself, which is what this script is for.
  *
