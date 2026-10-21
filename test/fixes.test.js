@@ -107,3 +107,56 @@ test('Compliance can tell that a list carries the local extension', () => {
   const html = fs.readFileSync(path.join(root, 'public', 'index.html'), 'utf8');
   assert.match(html, /DvbiRules\.usesLocalExtension\(xmlText\)/, 'checkCompliance reports the extension');
 });
+
+// 7. TS 103 770 V1.2.1 clause 5.5.2, table 15: Service@version "shall be incremented for every published change".
+test('a restore or save never gives a service a version already published for it', () => withServer(async base => {
+  const svcVersions = async () => {
+    const xml = await (await fetch(`${base}/service-list.xml`)).text();
+    return [...xml.matchAll(/<Service version="(\d+)">\s*<UniqueIdentifier>([^<]+)</g)].map(m => [m[2], Number(m[1])]);
+  };
+  const edit = async name => {
+    const cfg = await (await fetch(`${base}/api/config`)).json();
+    cfg.services[0].name = name;
+    await fetch(`${base}/api/config`, json('PUT', cfg));
+    return cfg.services[0].uid;
+  };
+  const uid = await edit('Version test A');
+  const vA = (await svcVersions()).find(x => x[0] === uid)[1];
+  await edit('Version test B');
+  const vB = (await svcVersions()).find(x => x[0] === uid)[1];
+  assert.ok(vB > vA, 'an edit raises the service version');
+  // The snapshot taken when B was published holds A; restoring it puts A's content (and its old
+  // version number) back, which must not be served under a number already used.
+  const hist = await (await fetch(`${base}/api/history`)).json();
+  const snapA = hist.find(h => { try {
+    return JSON.parse(fs.readFileSync(path.join(DATA, 'config-history', h.filename), 'utf8')).services[0].name === 'Version test A';
+  } catch { return false; } });
+  assert.ok(snapA, 'a snapshot holding A exists');
+  await fetch(`${base}/api/history/restore/${snapA.filename}`, json('POST'));
+  const vR = (await svcVersions()).find(x => x[0] === uid)[1];
+  assert.ok(vR > vB, `restored service must be above ${vB}, got ${vR}`);
+  await edit('Version test C');
+  const vC = (await svcVersions()).find(x => x[0] === uid)[1];
+  assert.ok(vC > vR);
+  // Saving without changing the service does not burn a version number.
+  const cfg = await (await fetch(`${base}/api/config`)).json();
+  await fetch(`${base}/api/config`, json('PUT', cfg));
+  assert.equal((await svcVersions()).find(x => x[0] === uid)[1], vC);
+}));
+
+// 8. Clause 5.2.2: the Service List ID is a URI of a registered scheme.
+test('Validate requires the Service List ID to be a URI', () => {
+  assert.equal(rules.listIdProblem('tag:example.com,2026:servicelist:1'), '');
+  assert.equal(rules.listIdProblem('urn:example:servicelist:1'), '');
+  assert.equal(rules.listIdProblem('https://example.com/lists/1'), '');
+  assert.match(rules.listIdProblem('demo'), /not an absolute URI/);
+  assert.match(rules.listIdProblem('has space:x'), /not an absolute URI/);
+  assert.match(rules.listIdProblem('tag:example.com:nodate'), /tag: URI/);
+  assert.ok(rules.listIdProblem(''));
+  const cfg = JSON.parse(JSON.stringify(example));
+  cfg.listId = 'demo';
+  const failed = rules.listChecks(cfg).filter(c => !c.ok);
+  assert.equal(rules.listChecks(cfg).length, 11);
+  assert.equal(failed.length, 1);
+  assert.match(failed[0].detail, /not an absolute URI/);
+});

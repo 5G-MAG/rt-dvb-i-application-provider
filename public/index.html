@@ -873,6 +873,7 @@ async function saveAll() {
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'Unknown error');
     config.version = data.version;
+    (data.services || []).forEach(v => { const s = config.services.find(x => x.uid === v.uid); if (s) s.version = v.version; });
     showToast(`Published (v${data.version}) — copy the Receiver URL from the bar above.`, 'success');
     updateXMLDisplay(data.xml);
     refreshSourceInfo();
@@ -1361,6 +1362,7 @@ function saveService() {
     id:            uidVal.split(':').pop().replace(/[^a-z0-9-]/gi, '-').toLowerCase() || ('svc-' + Date.now()),
     uid:           uidVal,
     enabled:       existing ? existing.enabled !== false : true,
+    // A proposal only: the server raises it above every version published for this uid (clause 5.5.2)
     version:       existing ? (existing.version || 1) + 1 : 1,
     name,
     provider:      document.getElementById('m-provider').value.trim(),

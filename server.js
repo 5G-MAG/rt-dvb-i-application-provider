@@ -150,6 +150,46 @@ function highestKnownVersion(current) {
   return max;
 }
 
+// TS 103 770 V1.2.1 clause 5.5.2, table 15: Service@version "shall be incremented for every published
+// change". The same hazard as for the list: after a History restore the snapshot carries older
+// service versions, and a later edit would reuse a number already published for a different
+// description of that service. Every service in `next` is therefore reconciled with what was
+// published for its uid (the current list and every history snapshot): content identical to the
+// highest published version keeps that version; anything else gets one above it. A service never
+// published before keeps the version it arrives with. The history keeps 20 snapshots, so numbers
+// published before the oldest kept snapshot cannot be seen here.
+function canonical(v) {
+  if (Array.isArray(v)) return '[' + v.map(canonical).join(',') + ']';
+  if (v && typeof v === 'object') {
+    return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canonical(v[k])).join(',') + '}';
+  }
+  return JSON.stringify(v === undefined ? null : v);
+}
+const withoutVersion = s => { const { version, ...rest } = s; return canonical(rest); };
+function reconcileServiceVersions(next, current) {
+  const published = new Map(); // uid -> { version, content } for the highest version seen (later wins a tie)
+  const note = cfg => {
+    for (const s of (cfg && Array.isArray(cfg.services)) ? cfg.services : []) {
+      if (!s || !s.uid) continue;
+      const v = Number(s.version) || 1;
+      const seen = published.get(s.uid);
+      if (!seen || v >= seen.version) published.set(s.uid, { version: v, content: withoutVersion(s) });
+    }
+  };
+  try {
+    for (const f of fs.readdirSync(HISTORY_DIR).filter(f => /^config-.*\.json$/.test(f)).sort()) {
+      try { note(JSON.parse(fs.readFileSync(path.join(HISTORY_DIR, f), 'utf8'))); } catch (_) {}
+    }
+  } catch (_) {}
+  note(current);
+  for (const s of next.services || []) {
+    const seen = s && s.uid && published.get(s.uid);
+    if (!seen) { if (s && !(Number(s.version) >= 1)) s.version = 1; continue; }
+    s.version = withoutVersion(s) === seen.content ? seen.version : seen.version + 1;
+  }
+  return next;
+}
+
 let config    = loadConfig();
 {
   const problem = cgsidProblem(config);
@@ -1003,11 +1043,12 @@ app.put('/api/config', requireAdmin, rateLimit('mutate', 30, 60000), (req, res) 
     const cgsid = cgsidProblem(updated);
     if (cgsid) return res.status(400).json({ error: cgsid });
     updated.version = highestKnownVersion(config) + 1;
+    reconcileServiceVersions(updated, config);
     saveHistory(config); // snapshot previous state
     config = updated;
     saveConfig(config); // also bumps lastSaved
     const base = `${req.protocol}://${req.get('host')}`;
-    res.json({ ok: true, version: config.version, xml: buildServiceList(base, config) });
+    res.json({ ok: true, version: config.version, services: config.services.map(s => ({ uid: s.uid, version: s.version })), xml: buildServiceList(base, config) });
   } catch (e) {
     // assertValidConfigShape throws a plain validation Error; distinguish from real server errors
     res.status(e instanceof Error && /^config/.test(e.message) ? 400 : 500).json({ error: String(e.message || e) });
@@ -1041,6 +1082,7 @@ app.post('/api/history/restore/:filename', requireAdmin, rateLimit('mutate', 30,
     // Restoring changes what /service-list.xml serves, so it is a published change: it gets a
     // version above everything published so far rather than the snapshot's own, older, number.
     data.version = highestKnownVersion(config) + 1;
+    reconcileServiceVersions(data, config);
     config = data;
     saveConfig(config);
     res.json({ ok: true, version: config.version });

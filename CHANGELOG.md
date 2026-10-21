@@ -9,6 +9,12 @@
 - Validate accepts an `mbms://` locator on a 5G / MBMS extension instance only.
 - Compliance reports the local 5G extension as outside the DVB schema, as `test:xsd` does.
 
+### Follow-up
+
+- `Service@version` no longer repeats after a History restore: the server raises it above every version published for that uid (current list and history snapshots), clause 5.5.2 table 15. An unchanged service keeps its number.
+- Validate check 1 now requires the Service List ID to be an absolute URI with a scheme, and a well-formed `tag:` URI when it is one (clause 5.2.2); still 11 checks, the stock list still passes 11 of 11.
+- `test:xsd` reports a list with HLS as not checked before looking at the 5G extension, and reads the operator data from `DVBI_DATA_DIR` (else the repository's `config.json`), skipping with a message when absent.
+
 ## 2026-09 (cont.) — Security hardening
 
 - **Uploaded logos cannot execute.** SVG is among the accepted image types, and uploads are served

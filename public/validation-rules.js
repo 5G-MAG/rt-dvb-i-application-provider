@@ -24,6 +24,20 @@
     return inst.type === 'mbms' && /^mbms:\/\//i.test(inst.url);
   }
 
+  // TS 103 770 V1.2.1 clause 5.2.2: identifiers "shall use a registered URI scheme"; the "tag" scheme
+  // (RFC 4151) is given as suitable. Whether a scheme is registered cannot be decided offline, so any
+  // absolute URI (RFC 3986 scheme, then a non-empty remainder, no whitespace) is accepted, and a tag:
+  // URI is also checked for its own form, tag:authority,date:specific. Returns a message, or ''.
+  function listIdProblem(id) {
+    const v = String(id == null ? '' : id);
+    if (!v) return 'Required, and must be a URI, e.g. tag:example.com,2024:servicelist:1';
+    if (/\s/.test(v) || !/^[A-Za-z][A-Za-z0-9+.-]*:\S+$/.test(v))
+      return `"${v}" is not an absolute URI with a scheme (clause 5.2.2); use e.g. tag:example.com,2024:servicelist:1`;
+    if (/^tag:/i.test(v) && !/^tag:[^,:\s]+,\d{4}(-\d{2}(-\d{2})?)?:\S+$/i.test(v))
+      return `"${v}" is not a valid tag: URI (RFC 4151: tag:authority,date:specific)`;
+    return '';
+  }
+
   // The Validate view's checks, as data: [{ ok, warn, label, detail }].
   function listChecks(config) {
     const svcs    = config.services || [];
@@ -35,7 +49,9 @@
 
     chk(!!config.listName, false, 'List name is set', config.listName ? `"${config.listName}"` : 'Required field is empty');
     chk(!!config.providerName, false, 'Provider name is set', config.providerName ? `"${config.providerName}"` : 'Required field is empty');
-    chk(!!config.listId, false, 'Service List ID is set (§5.5.1 mandatory)', config.listId ? `"${config.listId}"` : 'Required — use a tag: URI, e.g. tag:example.com,2024:servicelist:1');
+    const idProblem = listIdProblem(config.listId);
+    chk(!idProblem, false, 'Service List ID is set and is a URI (§5.5.1, §5.2.2)',
+      idProblem ? idProblem : `"${config.listId}"`);
     chk(!!(config.epg && config.epg.id), false, 'EPG source ID is set', config.epg && config.epg.id ? `"${config.epg.id}"` : 'Required for ContentGuideSource');
     chk(enabled.length > 0, false, 'At least one enabled service', `${enabled.length} enabled, ${svcs.length - enabled.length} disabled`);
 
@@ -68,7 +84,7 @@
     return checks;
   }
 
-  const api = { NS_DVBI_5G, usesLocalExtension, streamUrlOk, listChecks };
+  const api = { NS_DVBI_5G, usesLocalExtension, streamUrlOk, listIdProblem, listChecks };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.DvbiRules = api;
 })(typeof self !== 'undefined' ? self : this);
