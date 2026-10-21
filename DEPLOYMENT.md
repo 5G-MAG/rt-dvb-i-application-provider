@@ -12,7 +12,7 @@ cd rt-dvb-i-application-provider && npm install && npm start      # http://local
 cd rt-dvb-i-application && npm install && npm start    # http://localhost:5000
 ```
 
-Published service list: `GET /service-list.xml` (public). EPG: `GET /epg/schedule?sid=<uid>`, `GET /epg/nownext?sid=<uid>`.
+Published service list: `GET /service-list.xml` (public, `application/vnd.dvb.dvbisl+xml`). EPG: `GET /epg/schedule?sid=<uid>`, `GET /epg/nownext?sid=<uid>`.
 
 ## Admin authentication (IMPORTANT)
 
@@ -51,6 +51,7 @@ a multi-instance deployment behind a load balancer would need a shared store, e.
 |---|---|---|
 | `PORT` | `4000` | port to listen on |
 | `ADMIN_TOKEN` | unset | when set, `/api/*` requires `Authorization: Bearer <token>`. **Unset means the admin API, including logo upload, is open to anyone who can reach the server.** |
+| `DVBI_DATA_DIR` | the project directory | where `config.json` and `config-history/` are kept. Used by the tests; also useful to keep operator data outside the checkout. |
 | `LOG_LEVEL` | `info` | `error`, `warn`, `info`, `debug` |
 | `HTTPS_KEY_PATH`, `HTTPS_CERT_PATH` | unset | serve HTTPS directly instead of behind a proxy |
 | `DVBI_SCHEMAS` | `test/schemas` | directory holding the XSD and classification scheme files, for `npm run test:xsd` and `npm run test:cs`. Keep it outside the working tree. Without it both checks skip and exit 0. |

@@ -42,8 +42,8 @@
     "targetRegion": "EUR",
     "subscriptionPackage": "Basic",
     "customEpgUrl": "",
-    "availableFrom": "2026-01-01T00:00:00.000Z",
-    "availableTo": "2030-12-31T23:59:59.000Z",
+    "availableFrom": null,
+    "availableTo": null,
 
     "linkedApp": {
       "url": "https://example.com/apps/example-channel/",

@@ -31,14 +31,17 @@ const logger = {
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const CONFIG_PATH  = path.join(__dirname, 'config.json');
+// DVBI_DATA_DIR relocates the two pieces of operator data this server writes, config.json and
+// config-history/, so that tests can exercise the write paths without touching the real ones.
+const DATA_DIR = process.env.DVBI_DATA_DIR || __dirname;
+const CONFIG_PATH  = path.join(DATA_DIR, 'config.json');
 // The service list is operator data that this server rewrites on every publish, so config.json is
 // not tracked. A fresh checkout has only the example, which is copied into place on first start:
 // without it the server would have nothing to load and would exit before the operator could use
 // the editor to create one.
 const CONFIG_EXAMPLE = path.join(__dirname, 'config.example.json');
 const LOGOS_DIR    = path.join(__dirname, 'public', 'logos', 'uploaded');
-const HISTORY_DIR  = path.join(__dirname, 'config-history');
+const HISTORY_DIR  = path.join(DATA_DIR, 'config-history');
 const TEMPLATES_DIR = path.join(__dirname, 'templates');
 
 fs.mkdirSync(LOGOS_DIR,   { recursive: true });
@@ -126,6 +129,65 @@ function saveHistory(cfg) {
       try { fs.unlinkSync(path.join(HISTORY_DIR, files.shift())); } catch (_) {}
     }
   } catch (_) {}
+}
+
+// TS 103 770 V1.2.1 clause 5.5.1, table 14: ServiceList@version "shall be incremented for every
+// published change". Taking config.version + 1 is not enough once an earlier list can be put back
+// (History, Restore): the restored snapshot carries an older number, and the next save would then
+// reuse a number already published for a different list. The next version is therefore one above
+// the highest this server has ever held, which includes every snapshot kept in the history.
+function highestKnownVersion(current) {
+  let max = Number(current && current.version) || 0;
+  try {
+    for (const f of fs.readdirSync(HISTORY_DIR)) {
+      if (!/^config-.*\.json$/.test(f)) continue;
+      try {
+        const v = Number(JSON.parse(fs.readFileSync(path.join(HISTORY_DIR, f), 'utf8')).version) || 0;
+        if (v > max) max = v;
+      } catch (_) {}
+    }
+  } catch (_) {}
+  return max;
+}
+
+// TS 103 770 V1.2.1 clause 5.5.2, table 15: Service@version "shall be incremented for every published
+// change". The same hazard as for the list: after a History restore the snapshot carries older
+// service versions, and a later edit would reuse a number already published for a different
+// description of that service. Every service in `next` is therefore reconciled with what was
+// published for its uid (the current list and every history snapshot): content identical to the
+// highest published version keeps that version; anything else gets one above it. A service never
+// published before keeps the version it arrives with. The history keeps 20 snapshots, so numbers
+// published before the oldest kept snapshot cannot be seen here.
+function canonical(v) {
+  if (Array.isArray(v)) return '[' + v.map(canonical).join(',') + ']';
+  if (v && typeof v === 'object') {
+    return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canonical(v[k])).join(',') + '}';
+  }
+  return JSON.stringify(v === undefined ? null : v);
+}
+const withoutVersion = s => { const { version, ...rest } = s; return canonical(rest); };
+function reconcileServiceVersions(next, current) {
+  const published = new Map(); // uid -> { version, content } for the highest version seen (later wins a tie)
+  const note = cfg => {
+    for (const s of (cfg && Array.isArray(cfg.services)) ? cfg.services : []) {
+      if (!s || !s.uid) continue;
+      const v = Number(s.version) || 1;
+      const seen = published.get(s.uid);
+      if (!seen || v >= seen.version) published.set(s.uid, { version: v, content: withoutVersion(s) });
+    }
+  };
+  try {
+    for (const f of fs.readdirSync(HISTORY_DIR).filter(f => /^config-.*\.json$/.test(f)).sort()) {
+      try { note(JSON.parse(fs.readFileSync(path.join(HISTORY_DIR, f), 'utf8'))); } catch (_) {}
+    }
+  } catch (_) {}
+  note(current);
+  for (const s of next.services || []) {
+    const seen = s && s.uid && published.get(s.uid);
+    if (!seen) { if (s && !(Number(s.version) >= 1)) s.version = 1; continue; }
+    s.version = withoutVersion(s) === seen.content ? seen.version : seen.version + 1;
+  }
+  return next;
 }
 
 let config    = loadConfig();
@@ -659,6 +721,10 @@ ${serviceBlocks}
 </ServiceList>`;
 }
 
+// TS 103 770 V1.2.1 clause 5.1.2: a Service List "shall be made available using HTTP ... using the
+// Media Type (MIME type) application/vnd.dvb.dvbisl+xml".
+const SERVICE_LIST_MEDIA_TYPE = 'application/vnd.dvb.dvbisl+xml';
+
 app.get('/service-list.xml', (req, res) => {
   // Conditional GET per TS 103 770 V1.2.1 clause 4.3.2.2, If-Modified-Since headers.
   // A184r2 clause 4.11 covers when a client refreshes the list.
@@ -671,7 +737,7 @@ app.get('/service-list.xml', (req, res) => {
   }
   const base = `${req.protocol}://${req.get('host')}`;
   const targetCountry = req.query.TargetCountry || req.query.targetCountry || '';
-  res.setHeader('Content-Type', 'application/xml');
+  res.setHeader('Content-Type', SERVICE_LIST_MEDIA_TYPE);
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Last-Modified', lastSaved.toUTCString());
   res.send(buildServiceList(base, config, { targetCountry }));
@@ -976,12 +1042,13 @@ app.put('/api/config', requireAdmin, rateLimit('mutate', 30, 60000), (req, res) 
     if (!Array.isArray(updated.services)) return res.status(400).json({ error: 'Config must have a services array' });
     const cgsid = cgsidProblem(updated);
     if (cgsid) return res.status(400).json({ error: cgsid });
-    updated.version = (config.version || 0) + 1;
+    updated.version = highestKnownVersion(config) + 1;
+    reconcileServiceVersions(updated, config);
     saveHistory(config); // snapshot previous state
     config = updated;
     saveConfig(config); // also bumps lastSaved
     const base = `${req.protocol}://${req.get('host')}`;
-    res.json({ ok: true, version: config.version, xml: buildServiceList(base, config) });
+    res.json({ ok: true, version: config.version, services: config.services.map(s => ({ uid: s.uid, version: s.version })), xml: buildServiceList(base, config) });
   } catch (e) {
     // assertValidConfigShape throws a plain validation Error; distinguish from real server errors
     res.status(e instanceof Error && /^config/.test(e.message) ? 400 : 500).json({ error: String(e.message || e) });
@@ -1012,6 +1079,10 @@ app.post('/api/history/restore/:filename', requireAdmin, rateLimit('mutate', 30,
     const data = JSON.parse(fs.readFileSync(filepath, 'utf8'));
     if (_hasUnsafeKeys(data)) return res.status(400).json({ error: 'Snapshot contains disallowed keys' });
     saveHistory(config); // snapshot current state before restoring
+    // Restoring changes what /service-list.xml serves, so it is a published change: it gets a
+    // version above everything published so far rather than the snapshot's own, older, number.
+    data.version = highestKnownVersion(config) + 1;
+    reconcileServiceVersions(data, config);
     config = data;
     saveConfig(config);
     res.json({ ok: true, version: config.version });

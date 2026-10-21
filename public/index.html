@@ -735,6 +735,7 @@
   </div>
 </div>
 
+<script src="validation-rules.js"></script>
 <script>
 // ── Admin auth: attach a bearer token (when set) to /api/ calls ────────────────
 // Backward-compatible: when the server has no ADMIN_TOKEN, no token is needed and nothing changes.
@@ -872,6 +873,7 @@ async function saveAll() {
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'Unknown error');
     config.version = data.version;
+    (data.services || []).forEach(v => { const s = config.services.find(x => x.uid === v.uid); if (s) s.version = v.version; });
     showToast(`Published (v${data.version}) — copy the Receiver URL from the bar above.`, 'success');
     updateXMLDisplay(data.xml);
     refreshSourceInfo();
@@ -1360,6 +1362,7 @@ function saveService() {
     id:            uidVal.split(':').pop().replace(/[^a-z0-9-]/gi, '-').toLowerCase() || ('svc-' + Date.now()),
     uid:           uidVal,
     enabled:       existing ? existing.enabled !== false : true,
+    // A proposal only: the server raises it above every version published for this uid (clause 5.5.2)
     version:       existing ? (existing.version || 1) + 1 : 1,
     name,
     provider:      document.getElementById('m-provider').value.trim(),
@@ -1869,49 +1872,8 @@ function closeValidate() {
 
 function runValidation() {
   readSettings();
-  const svcs    = config.services || [];
-  const enabled = svcs.filter(s => s.enabled !== false);
-  const checks  = [];
-
-  function chk(ok, warn, label, detail) {
-    checks.push({ ok: ok === true, warn: warn === true, label, detail: detail || '' });
-  }
-
-  // List-level
-  chk(!!config.listName, false, 'List name is set', config.listName ? `"${config.listName}"` : 'Required field is empty');
-  chk(!!config.providerName, false, 'Provider name is set', config.providerName ? `"${config.providerName}"` : 'Required field is empty');
-  chk(!!config.listId, false, 'Service List ID is set (§5.5.1 mandatory)', config.listId ? `"${config.listId}"` : 'Required — use a tag: URI, e.g. tag:example.com,2024:servicelist:1');
-  chk(!!config.epg?.id, false, 'EPG source ID is set', config.epg?.id ? `"${config.epg.id}"` : 'Required for ContentGuideSource');
-  chk(enabled.length > 0, false, 'At least one enabled service', `${enabled.length} enabled, ${svcs.length - enabled.length} disabled`);
-
-  // LCN uniqueness
-  const lcnNums = enabled.filter(s => s.lcn != null).map(s => s.lcn);
-  const lcnDups = lcnNums.filter((v, i) => lcnNums.indexOf(v) !== i);
-  chk(lcnDups.length === 0, false, 'LCN values are unique', lcnDups.length ? `Duplicate LCNs: ${[...new Set(lcnDups)].join(', ')}` : `${lcnNums.length} channel numbers assigned`);
-
-  // UID uniqueness
-  const uids    = enabled.map(s => s.uid).filter(Boolean);
-  const uidDups = uids.filter((v, i) => uids.indexOf(v) !== i);
-  chk(uidDups.length === 0, false, 'Unique identifiers (UIDs) are unique', uidDups.length ? `Duplicate UIDs: ${[...new Set(uidDups)].join(', ')}` : 'All UIDs unique');
-
-  // Per-service checks
-  let noNameCount = 0, noInstanceCount = 0, badUrlCount = 0, drmNoSchemeCount = 0;
-  for (const s of enabled) {
-    if (!s.name) noNameCount++;
-    if (!s.instances?.length) noInstanceCount++;
-    for (const inst of (s.instances || [])) {
-      if (inst.type !== 'multicast' && inst.url && !/^https?:\/\//i.test(inst.url)) badUrlCount++;
-      // Multi-DRM model: each entry in drmSystems must carry an encryptionScheme (§5.5.20).
-      // Tolerate legacy single-protection data that predates the drmSystems array.
-      const drms = inst.drmSystems?.length ? inst.drmSystems
-        : (inst.protection && inst.protection !== 'none' ? [{ encryptionScheme: inst.encryptionScheme }] : []);
-      if (drms.some(d => !d.encryptionScheme)) drmNoSchemeCount++;
-    }
-  }
-  chk(noNameCount === 0, false, 'All services have a name', noNameCount ? `${noNameCount} service(s) missing a name` : 'All services named');
-  chk(noInstanceCount === 0, false, 'All services have at least one stream', noInstanceCount ? `${noInstanceCount} service(s) have no delivery instances` : 'All services have streams');
-  chk(badUrlCount === 0, false, 'All stream URLs use http(s)', badUrlCount ? `${badUrlCount} URL(s) are not http/https` : 'All URLs valid scheme');
-  chk(drmNoSchemeCount === 0, true, 'DRM instances have an encryption scheme (§5.5.20 mandatory)', drmNoSchemeCount ? `${drmNoSchemeCount} instance(s) missing encryptionScheme — defaults to cenc` : 'All DRM instances have encryptionScheme');
+  // The checks live in validation-rules.js, shared with the unit tests.
+  const checks = DvbiRules.listChecks(config);
 
   const passed = checks.filter(c => c.ok).length;
   const body   = document.getElementById('validate-body');
@@ -2309,6 +2271,15 @@ function checkCompliance(xmlText) {
     chk(noUri === 0 ? 'ok' : 'fail', 'All linked apps have <MediaUri>',
       noUri ? `${noUri} missing application URL` : '');
   });
+
+  // 11. Local extension: outside the DVB schema, so not counted as conformance. Reported the same
+  // way test/xsd-validate.js reports it ("NOT CONFORMANT GROUND").
+  if (DvbiRules.usesLocalExtension(xmlText)) {
+    section('Local extension (outside the DVB schema)', chk => {
+      chk('warn', `Carries the local 5G-MAG delivery extension (${DvbiRules.NS_DVBI_5G})`,
+        'Not defined by any DVB schema, so the list is not conformant ground: the checks above cover only what DVB specifies. See COMPLIANCE.md.');
+    });
+  }
 
   return results;
 }

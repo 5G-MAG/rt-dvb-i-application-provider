@@ -112,6 +112,39 @@ TVA). That fix is in `server.js` and the receiver/importer parsers and does not 
 files being present. The schema files themselves were removed from this repository and are not
 redistributed here — see CHANGELOG.md for context.
 
+## Behaviours fixed against TS 103 770 V1.2.1
+
+Checked against the clause text of V1.2.1 on 2026-10-21.
+
+- **Media type (clause 5.1.2).** `/service-list.xml` is served as
+  `application/vnd.dvb.dvbisl+xml`, which the clause requires for a Service List. It was
+  `application/xml`. `Last-Modified` and the `304` answer to `If-Modified-Since` are unchanged. The
+  EPG endpoints are TV-Anytime documents, for which the clause names no media type, and stay as they were.
+- **List version (clause 5.5.1, table 14).** `ServiceList@version` shall be incremented for every
+  published change. Restoring an earlier list from History changes what is published, so it now gets
+  a version above every version the server has held (the current one and all history snapshots), and
+  so does the next save. Before, a restore put back the old number and the next save reused a number
+  already published for a different list. Logo uploads and deletions still do not change the version,
+  because they do not change the document; only the image behind an unchanged URL.
+- **Availability (clause 5.5.15, table 26).** `Period/@validFrom` and `@validTo` are both optional,
+  with no end meaning "available indefinitely". The service template no longer fills in a period, so
+  a new service is open-ended instead of expiring on a date chosen in advance.
+- **Service List Offering (clause 5.3.5, table 12).** `ServiceListName` "shall be the same as
+  ServiceList.Name" and `ServiceListId` is checked by a client against `ServiceList@id`. The stock
+  `config.example.json` now carries a Service List ID and the name `5G-MAG`, matching the stock entry
+  of the registry (`rt-dvb-i-service-list-registry`, `registry.json`), so a fresh install validates
+  11 of 11. The registry entry itself is in that repository and was not changed here.
+
+### What the Compliance view does and does not say about the local extension
+
+The Compliance view checks a list against the structure DVB specifies. A list that carries the
+local 5G delivery extension (see below) is not covered by any DVB schema, so the view adds a
+warning section, "Local extension (outside the DVB schema)", and never reports such a list as
+"Fully compliant". This is the same finding `npm run test:xsd` prints as `NOT CONFORMANT GROUND`;
+both use the extension namespace `urn:5g-mag:metadata:dvbi-5g:2026` as the marker. The Validate view
+accepts an `mbms://` locator only on a "5G / MBMS (extension)" instance, which is where the
+extension carries it, and still rejects any other non-http(s) URL.
+
 ## Delivery over 5G
 
 What it would take to carry these services over a 5G system, which of ETSI TR 103 972's fourteen
