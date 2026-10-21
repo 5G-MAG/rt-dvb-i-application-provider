@@ -1,10 +1,10 @@
 {
   "version": 2,
-  "listName": "DVB-I Demo Service List",
+  "listName": "5G-MAG",
   "providerName": "DVB-I Demo",
   "listLang": "en",
   "targetCountry": "",
-  "listId": "",
+  "listId": "tag:5g-mag.org,2026:servicelist:local-demo",
   "epg": {
     "id": "dvbi-demo-epg",
     "providerName": "DVB-I Demo EPG"

@@ -8,7 +8,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "npm run test:unit && npm run test:xsd && npm run test:cs",
-    "test:unit": "node --test test/server.test.js",
+    "test:unit": "node --test test/server.test.js test/fixes.test.js",
     "test:xsd": "node test/xsd-validate.js",
     "test:cs": "node test/cs-validate.js"
   },

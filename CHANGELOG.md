@@ -1,5 +1,14 @@
 # Changelog — rt-dvb-i-application-provider
 
+## 2026-10 — Spec compliance and validation fixes
+
+- Restoring from History no longer lets a later save reuse a published `@version` (TS 103 770 clause 5.5.1).
+- `/service-list.xml` is served as `application/vnd.dvb.dvbisl+xml` (clause 5.1.2).
+- The stock list has a Service List ID and a name matching the stock registry entry; a fresh install validates 11 of 11 (clause 5.3.5, table 12).
+- The service template no longer writes an availability period (clause 5.5.15).
+- Validate accepts an `mbms://` locator on a 5G / MBMS extension instance only.
+- Compliance reports the local 5G extension as outside the DVB schema, as `test:xsd` does.
+
 ## 2026-09 (cont.) — Security hardening
 
 - **Uploaded logos cannot execute.** SVG is among the accepted image types, and uploads are served
